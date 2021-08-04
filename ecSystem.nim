@@ -51,10 +51,10 @@ func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
     assert componentVectors[id] != nil
     cast[ref seq[T]](componentVectors[id])[]
 
-func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
-    let id = typeId(T)
-    if componentVectors.len > id and componentVectors[id] != nil:
-        return cast[ref seq[T]](componentVectors[id])[]
+# func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
+#     let id = typeId(T)
+#     if componentVectors.len > id and componentVectors[id] != nil:
+#         return cast[ref seq[T]](componentVectors[id])[]
 
 #----------------------------------------------#
 # TODO: check if componentTypeToEntity can replace numComponents
@@ -105,10 +105,17 @@ func remove(ecm: var EntityComponentManager, entity: Entity) =
 
 func add[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     if not ecm.has(entity):
-        raise newException(KeyError, "Component cannot be added to entity: Entity " & $entity & " does not exist.")
+        raise newException(
+            KeyError,
+            "Component cannot be added to entity: Entity " & $entity & " does not exist."
+        )
     if ecm.has(entity, T):
-        raise newException(KeyError, "Component cannot be added to entity: Entity " & $entity & " already has component " & $T & ".")
-    var componentVector = ecm.componentVectors.get(T)
+        raise newException(
+            KeyError,
+            "Component cannot be added to entity: Entity " & $entity & " already has component " & $T & "."
+        )
+    
+    template componentVector: auto = ecm.componentVectors.get(T)
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
     ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
@@ -116,6 +123,41 @@ func add[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     ecm.numComponents[bitTypeId(T)] += 1
     ecm.componentTypeToEntity[bitTypeId(T)].add(entity)
 
+func remove(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
+    if not ecm.has(entity):
+        raise newException(
+            KeyError,
+            "Component cannot be removed from entity: Entity " & $entity & " does not exist."
+        )
+    if not ecm.has(entity, T):
+        raise newException(
+            KeyError,
+            "Component cannot be remove from entity: Entity " & $entity & " does not have component " & $T & "."
+        )
+    
+    ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
+    ecm.numComponents[bitTypeId(T)] -= 1
+    let index = ecm.componentTypeToEntity[bitTypeId(T)].find(entity)
+    if index != -1:
+        ecm.componentTypeToEntity[bitTypeId(T)].delete(index)
+
+func get[T](ecm: var EntityComponentManager, entity: Entity): var T =    
+    if not ecm.has(entity):
+        raise newException(
+            KeyError,
+            "Component cannot be accessed: Entity " & $entity & " does not exist."
+        )
+    if not ecm.has(entity, T):
+        raise newException(
+            KeyError,
+            "Component cannot be accessed: Entity " & $entity & " does not have component " & $T & "."
+        )
+    template componentVector: auto = ecm.componentVectors.get(T)
+    assert componentVector.len > entity
+    componentVector[entity]
+
+# func get(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
+#     cast[var EntityComponentManager](ecm).get(entity, T)
 
 
 #----------------------------------------------#
@@ -131,6 +173,9 @@ echo ecm.has(entity1, (float, int, string))
 echo ecm.has(entity1, string)
 echo ecm.has(entity1, float)
 echo ecm.has(entity1, (float, int))
+ecm.remove(entity1, int)
+echo ecm.has(entity1, (float, int))
+echo ecm.get[:float](entity1)
 
 
 
