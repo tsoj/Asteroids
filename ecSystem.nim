@@ -36,10 +36,6 @@ func bitTypeIdUnion(Ts: tuple): uint64 =
         assert (bitId and entityBit) == 0
         bitId
 
-# template bitTypeId(Ts: untyped): uint64 =
-#     var ts: Ts
-#     bitTypeIdInternal(ts)
-
 #----------------------------------------------#
 
 type ComponentVectors = seq[ref seq[int8]]
@@ -61,7 +57,8 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
         return cast[ref seq[T]](componentVectors[id])[]
 
 #----------------------------------------------#
-
+# TODO: check if componentTypeToEntity can replace numComponents
+# TODO: describe all the eigenartiges behaviour of this
 type Entity = int
 type EntityComponentManager = object
     componentVectors: ComponentVectors
@@ -89,7 +86,7 @@ template has(ecm: EntityComponentManager, entity: Entity, ComponentTypes: untype
         var t: (ComponentTypes,)
     ecm.has(entity, t)
 
-func createEntity(ecm: var EntityComponentManager): Entity =
+func addEntity(ecm: var EntityComponentManager): Entity =
     if ecm.unusedEntities.len > 0:
         result = ecm.unusedEntities.pop()
         assert ecm.hasMask[result] == 0
@@ -106,7 +103,7 @@ func remove(ecm: var EntityComponentManager, entity: Entity) =
     ecm.hasMask[entity] = 0
     ecm.unusedEntities.add(entity)
 
-func create[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
+func add[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     if not ecm.has(entity):
         raise newException(KeyError, "Component cannot be added to entity: Entity " & $entity & " does not exist.")
     if ecm.has(entity, T):
@@ -115,6 +112,9 @@ func create[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
     ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
+    componentVector[entity] = component
+    ecm.numComponents[bitTypeId(T)] += 1
+    ecm.componentTypeToEntity[bitTypeId(T)].add(entity)
 
 
 
@@ -123,12 +123,14 @@ func create[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
 
 var ecm: EntityComponentManager
 
-let entity1 = ecm.createEntity()
+let entity1 = ecm.addEntity()
+ecm.add(entity1, float(0.5))
+ecm.add(entity1, int(2))
 
-
-echo ecm.has(34, (float, int, string))
-echo ecm.has(34, float)
-echo ecm.has(34, string)
+echo ecm.has(entity1, (float, int, string))
+echo ecm.has(entity1, string)
+echo ecm.has(entity1, float)
+echo ecm.has(entity1, (float, int))
 
 
 
