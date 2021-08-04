@@ -120,10 +120,17 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     template componentVector: auto = ecm.componentVectors.get(T)
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
-    ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
     componentVector[entity] = component
+
+    ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
     ecm.numComponents[typeId(T)] += 1
-    ecm.componentTypeToEntity[typeId(T)].add(entity)
+    
+    # sorting entities, such that while iterating over them we always have the smaller first and bigger last
+    template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
+    for i in countdown(typeToEntity.high, typeToEntity.low):
+        assert typeToEntity[i] != entity
+        if typeToEntity[i] < entity:
+            typeToEntity.insert(entity, i + 1)
 
 func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     if not ecm.has(entity):
@@ -180,6 +187,13 @@ iterator iterInternal*(ecm: EntityComponentManager, ComponentTypes: tuple): Enti
 template iter*(ecm: EntityComponentManager, ComponentTypes: varargs[untyped]): auto =
     ecm.iterInternal((new (ComponentTypes,))[])
 
+iterator iterAll*(ecm: EntityComponentManager): Entity =
+    for entity, hasMask in ecm.hasMask.pairs:
+        if ecm.has(entity):
+            yield entity
+
+#TODO: macro forEach()
+
 #----------------------------------------------#
 
 
@@ -229,7 +243,10 @@ ecm.add(entity5, float(5.0))
 for entity in ecm.iter(float, string):
     echo entity
 
-echo ecm
+ecm.remove(entity4)
+
+for entity in ecm.iterAll():
+    echo entity
 
 
 # var c: ComponentVectors
