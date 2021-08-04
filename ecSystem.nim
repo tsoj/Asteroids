@@ -51,10 +51,10 @@ func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
     assert componentVectors[id] != nil
     cast[ref seq[T]](componentVectors[id])[]
 
-# func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
-#     let id = typeId(T)
-#     if componentVectors.len > id and componentVectors[id] != nil:
-#         return cast[ref seq[T]](componentVectors[id])[]
+func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
+    let id = typeId(T)
+    if componentVectors.len > id and componentVectors[id] != nil:
+        return cast[ref seq[T]](componentVectors[id])[]
 
 #----------------------------------------------#
 # TODO: check if componentTypeToEntity can replace numComponents
@@ -141,7 +141,7 @@ func remove(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     if index != -1:
         ecm.componentTypeToEntity[bitTypeId(T)].delete(index)
 
-func get[T](ecm: var EntityComponentManager, entity: Entity): var T =    
+template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
     if not ecm.has(entity):
         raise newException(
             KeyError,
@@ -156,8 +156,11 @@ func get[T](ecm: var EntityComponentManager, entity: Entity): var T =
     assert componentVector.len > entity
     componentVector[entity]
 
-# func get(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
-#     cast[var EntityComponentManager](ecm).get(entity, T)
+proc get[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
+    ecm.getTemplate(entity, T)
+proc get(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
+    ecm.getTemplate(entity, T)
+
 
 
 #----------------------------------------------#
@@ -175,7 +178,14 @@ echo ecm.has(entity1, float)
 echo ecm.has(entity1, (float, int))
 ecm.remove(entity1, int)
 echo ecm.has(entity1, (float, int))
-echo ecm.get[:float](entity1)
+echo ecm.get(entity1, float)
+ecm.get(entity1, float) = 0.6
+echo ecm.get(entity1, float)
+
+proc stuff(ecm: EntityComponentManager, entity: Entity) =
+    echo ecm.get(entity, float)
+
+ecm.stuff(entity1)
 
 
 
