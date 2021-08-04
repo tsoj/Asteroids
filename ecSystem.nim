@@ -58,35 +58,37 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
 
 #----------------------------------------------#
 # TODO: check if componentTypeToEntity can replace numComponents
-# TODO: describe all the eigenartiges behaviour of this
-type Entity = int
-type EntityComponentManager = object
+# TODO: describe all the eigenartiges behaviour of this:
+# - rare and big objects should be passed as refs to the entity component manager, otherwiese alot of space will be wasted
+# - Components of type tuple may not work. Better use proper objects
+type Entity* = int
+type EntityComponentManager* = object
     componentVectors: ComponentVectors
     hasMask: seq[uint64]
     numComponents: array[maxNumComponentTypes, int]
     componentTypeToEntity: array[maxNumComponentTypes, seq[Entity]]
     unusedEntities: seq[Entity]
 
-func has(ecm: EntityComponentManager, entity: Entity): bool =
+func has*(ecm: EntityComponentManager, entity: Entity): bool =
     if entity < ecm.hasMask.len:
         return (ecm.hasMask[entity] and entityBit) != 0
     false
 
-func has(ecm: EntityComponentManager, entity: Entity, ComponentTypes: tuple): bool =
+func hasInternal*(ecm: EntityComponentManager, entity: Entity, ComponentTypes: tuple): bool =
     if ecm.has(entity):
         let bitId = bitTypeIdUnion(ComponentTypes)
         return (ecm.hasMask[entity] and bitId) == bitId
     false
 
-template has(ecm: EntityComponentManager, entity: Entity, ComponentTypes: untyped): bool =
+template has*(ecm: EntityComponentManager, entity: Entity, ComponentTypes: untyped): bool =
     var test: ComponentTypes
     when test is tuple:
         var t: ComponentTypes
     else:
         var t: (ComponentTypes,)
-    ecm.has(entity, t)
+    ecm.hasInternal(entity, t)
 
-func addEntity(ecm: var EntityComponentManager): Entity =
+func addEntity*(ecm: var EntityComponentManager): Entity =
     if ecm.unusedEntities.len > 0:
         result = ecm.unusedEntities.pop()
         assert ecm.hasMask[result] == 0
@@ -97,13 +99,13 @@ func addEntity(ecm: var EntityComponentManager): Entity =
     assert result < ecm.hasMask.len
     assert ecm.hasMask[result] == entityBit
 
-func remove(ecm: var EntityComponentManager, entity: Entity) =
+func remove*(ecm: var EntityComponentManager, entity: Entity) =
     if not ecm.has(entity):
         raise newException(KeyError, "Entity cannot be removed: Entity " & $entity & " does not exist.")
     ecm.hasMask[entity] = 0
     ecm.unusedEntities.add(entity)
 
-func add[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
+func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     if not ecm.has(entity):
         raise newException(
             KeyError,
@@ -120,10 +122,10 @@ func add[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
         componentVector.setLen(entity + 1)
     ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
     componentVector[entity] = component
-    ecm.numComponents[bitTypeId(T)] += 1
-    ecm.componentTypeToEntity[bitTypeId(T)].add(entity)
+    ecm.numComponents[typeId(T)] += 1
+    ecm.componentTypeToEntity[typeId(T)].add(entity)
 
-func remove(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
+func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     if not ecm.has(entity):
         raise newException(
             KeyError,
@@ -136,10 +138,10 @@ func remove(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
         )
     
     ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
-    ecm.numComponents[bitTypeId(T)] -= 1
-    let index = ecm.componentTypeToEntity[bitTypeId(T)].find(entity)
+    ecm.numComponents[typeId(T)] -= 1
+    let index = ecm.componentTypeToEntity[typeId(T)].find(entity)
     if index != -1:
-        ecm.componentTypeToEntity[bitTypeId(T)].delete(index)
+        ecm.componentTypeToEntity[typeId(T)].delete(index)
 
 template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
     if not ecm.has(entity):
@@ -156,12 +158,27 @@ template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, 
     assert componentVector.len > entity
     componentVector[entity]
 
-proc get[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
+func get*[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
     ecm.getTemplate(entity, T)
-proc get(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
+func get*(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
     ecm.getTemplate(entity, T)
 
+func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): TypeId =
+    var min = int.high
+    for T in ComponentTypes.fields:
+        let id = typeId(typeof T)
+        if min > ecm.numComponents[id]:
+            min = ecm.numComponents[id]
+            result = id
 
+iterator iterInternal*(ecm: EntityComponentManager, ComponentTypes: tuple): Entity =
+    let rarestComponent = ecm.getRarestComponent(ComponentTypes)
+    for entity in ecm.componentTypeToEntity[rarestComponent]:
+        if ecm.hasInternal(entity, ComponentTypes):
+            yield entity
+
+template iter*(ecm: EntityComponentManager, ComponentTypes: varargs[untyped]): auto =
+    ecm.iterInternal((new (ComponentTypes,))[])
 
 #----------------------------------------------#
 
@@ -188,6 +205,31 @@ proc stuff(ecm: EntityComponentManager, entity: Entity) =
 ecm.stuff(entity1)
 
 
+ecm.add(entity1, string("hello :D"))
+
+
+let entity2 = ecm.addEntity()
+ecm.add(entity2, string("hello 2"))
+ecm.add(entity2, float(2.0))
+
+let entity3 = ecm.addEntity()
+ecm.add(entity3, string("hello 3"))
+ecm.add(entity3, int(3))
+
+let entity4 = ecm.addEntity()
+ecm.add(entity4, float(4.0))
+ecm.add(entity4, int(4))
+ecm.add(entity4, string("hello 4"))
+ecm.remove(entity4, float)
+
+let entity5 = ecm.addEntity()
+ecm.add(entity5, string("hello 5"))
+ecm.add(entity5, float(5.0))
+
+for entity in ecm.iter(float, string):
+    echo entity
+
+echo ecm
 
 
 # var c: ComponentVectors
