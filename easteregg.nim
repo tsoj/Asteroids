@@ -1,5 +1,7 @@
 import
     framebuffer,
+    inputCatcher,
+    ecSystem,
     unicode,
     terminal
 
@@ -48,7 +50,7 @@ const asteroidTopTemplates = [
     "`OOOO``".toRunes,
     "```OOO`".toRunes,
     "``OOO``".toRunes,
-    "¸OOO```".toRunes
+    "`OOO```".toRunes
 ]
 
 type Asteroid = object
