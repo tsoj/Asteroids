@@ -1,4 +1,5 @@
 import ecSystem
+import macros
 
 type
     ComponentA = object
@@ -98,20 +99,19 @@ proc test(): bool =
                 firstEntity = entity
             var addition = 0
             for i in firstEntity..<entity:
-                if (i mod (numberEntities div 5 + 1)) == 0:
+                if (i mod (numberEntities div 5 + 1)) == 0 and ecm.has(i, ComponentA):
                     addition += 1
             doAssert entity + addition == ecm.get(entity, ComponentA).i
 
         # TODO: replace stuff1 and stuff3 with forEach
 
-        proc stuff1(a: ComponentA, b: ComponentB, s: var ComponentS) =
+        forEach(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
             s.l = (a.i + 1) * (19 + a.i) * (if b.f < 0.999: 1 else: 2)
-        for entity in ecm.iter(ComponentA, ComponentB, ComponentS):
-            stuff1(
-                ecm.get(entity, ComponentA),
-                ecm.get(entity, ComponentB),
-                ecm.get(entity, ComponentS)
-            )
+
+        proc stuff2(ecm: EntityComponentManager) =
+            forEach(ecm, a: ComponentA, b: ComponentB, s: ComponentS):
+                doAssert s.l == (a.i + 1) * (19 + a.i) * (if b.f < 0.999: 1 else: 2)
+        stuff2(ecm)
 
         for entity in ecm.iter(ComponentA, ComponentB, ComponentS):
             doAssert(
@@ -119,18 +119,30 @@ proc test(): bool =
                 (ecm.get(entity, ComponentA).i + 1) * (19 + ecm.get(entity, ComponentA).i) *
                 (if ecm.get(entity, ComponentB).f < 0.999: 1 else: 2)
             )
-
-        proc stuff2(ecm: EntityComponentManager) =
-            proc stuff3(a: ComponentA, b: ComponentB, s: ComponentS) =
-                doAssert s.l == (a.i + 1) * (19 + a.i) * (if b.f < 0.999: 1 else: 2)
-            for entity in ecm.iter(ComponentA, ComponentB, ComponentS):
-                stuff3(
-                    ecm.get(entity, ComponentA),
-                    ecm.get(entity, ComponentB),
-                    ecm.get(entity, ComponentS)
-                )
-        stuff2(ecm)
     true     
 
 doAssert test()
 
+
+
+var ecm: EntityComponentManager
+
+forEach(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
+    echo "Hello"
+
+# dumpTree:
+#     forEachMacroM(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
+#         echo a
+#         s = 0
+
+# dumpTree:
+#     block:
+#         proc stuff(a: ComponentA, b: ComponentB, s: var ComponentS) =
+#             echo a
+#             s = 0
+#         for entity in iter(ecm, ComponentA, ComponentB, ComponentS):
+#             stuff(
+#                 get(ecm, entity, ComponentA),
+#                 get(ecm, entity, ComponentB),
+#                 get(ecm, entity, ComponentS)
+#             )
