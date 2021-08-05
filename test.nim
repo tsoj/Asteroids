@@ -515,11 +515,6 @@ proc demo() =
         for entity in ecm.iterAll():
             echo entity
 
-                    
-    
-    
-
-
 demo()
 benchmark()
 test()
