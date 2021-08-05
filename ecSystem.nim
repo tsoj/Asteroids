@@ -28,11 +28,11 @@ func bitTypeId(T: typedesc): uint64 =
 
 func bitTypeIdUnion(Ts: tuple): uint64 =
     {.cast(noSideEffect).}:
-        let bitId {.global.} = block:
-            var b: uint64 = 0
+        var bitId {.global.}: uint64
+        once:
+            bitId = 0
             for T in Ts.fields:
-                b = b or bitTypeId(typeof T)
-            b
+                bitId = bitId or bitTypeId(typeof T)
         assert (bitId and entityBit) == 0
         bitId
 
@@ -63,7 +63,6 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
 # TODO: add logging
 # TODO: clean up macro
 # TODO: fix slow performance(?)
-# TODO: fix compile error when using --gc:arc
 type Entity* = int
 type EntityComponentManager* = object
     componentVectors: ComponentVectors
