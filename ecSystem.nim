@@ -2,15 +2,12 @@ import macros
 import macrocache
 import strutils
 import typetraits
-import algorithm
-
-#----------------------------------------------#
 
 const nextTypeId = CacheCounter("nextTypeId")
 
 type TypeId = int
 
-# number of components is limited, as the bit mask is only 64 bit big
+# number of components is limited, as the bit mask is only of size 64 bit
 const maxNumComponentTypes = 63
 const entityBit = 0b1
 
@@ -47,8 +44,7 @@ func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
     if componentVectors.len <= id:
         componentVectors.setLen(id + 1)
     if componentVectors[id] == nil:
-        componentVectors[id] = new seq[int8]
-    #debugEcho $T , ": id: ", id, ", addr: ", cast[uint64](componentVectors[id])
+        componentVectors[id] = cast[ref seq[int8]](new seq[T])
     assert componentVectors[id] != nil
     cast[ref seq[T]](componentVectors[id])[]
 
@@ -229,78 +225,3 @@ macro forEach*(args: varargs[untyped]): untyped =
             )
         )
     )
-
-
-#----------------------------------------------#
-
-
-var ecm: EntityComponentManager
-
-let entity1 = ecm.addEntity()
-ecm.add(entity1, float(0.5))
-ecm.add(entity1, int(2))
-
-echo ecm.has(entity1, (float, int, string))
-echo ecm.has(entity1, string)
-echo ecm.has(entity1, float)
-echo ecm.has(entity1, (float, int))
-ecm.remove(entity1, int)
-echo ecm.has(entity1, (float, int))
-echo ecm.get(entity1, float)
-ecm.get(entity1, float) = 0.6
-echo ecm.get(entity1, float)
-
-proc stuff(ecm: EntityComponentManager, entity: Entity) =
-    echo ecm.get(entity, float)
-
-ecm.stuff(entity1)
-
-
-ecm.add(entity1, string("hello :D"))
-
-
-let entity2 = ecm.addEntity()
-ecm.add(entity2, string("hello 2"))
-ecm.add(entity2, float(2.0))
-
-let entity3 = ecm.addEntity()
-ecm.add(entity3, string("hello 3"))
-ecm.add(entity3, int(3))
-
-let entity4 = ecm.addEntity()
-ecm.add(entity4, float(4.0))
-ecm.add(entity4, int(4))
-ecm.add(entity4, string("hello 4"))
-ecm.remove(entity4, float)
-
-let entity5 = ecm.addEntity()
-ecm.add(entity5, string("hello 5"))
-ecm.add(entity5, float(5.0))
-
-let entity6 = ecm.addEntity()
-ecm.add(entity6, int(6))
-ecm.add(entity6, float(6.0))
-
-for entity in ecm.iter(float, string):
-    echo entity
-
-forEach(ecm, f: var float, s: string):
-    echo s
-    f = 10.0
-
-forEach(ecm, f: float):
-    echo f
-
-forEach(ecm, f: var float, s: string):
-    echo s
-    f = 10.0
-
-
-ecm.remove(entity4)
-
-let entity7 = ecm.addEntity()
-let entity8 = ecm.addEntity()
-ecm.remove(entity7)
-
-for entity in ecm.iterAll():
-    echo entity
