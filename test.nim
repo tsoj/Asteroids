@@ -131,10 +131,10 @@ var ecm: EntityComponentManager
 forEach(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
     echo "Hello"
 
-# dumpTree:
-#     forEachMacroM(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
-#         echo a
-#         s = 0
+dumpTree:
+    forEachMacroM(ecm, a: ComponentA, b: ComponentB, s: var ComponentS):
+        echo a
+        s = 0
 
 # dumpTree:
 #     block:

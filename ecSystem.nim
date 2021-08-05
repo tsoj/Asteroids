@@ -61,7 +61,6 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
 # - rare and big objects should be passed as refs to the entity component manager, otherwiese alot of space will be wasted
 # - Components of type tuple may not work. Better use proper objects
 # TODO: add logging
-# TODO: clean up macro
 # TODO: fix slow performance(?)
 type Entity* = int
 type EntityComponentManager* = object
@@ -202,43 +201,46 @@ iterator iterAll*(ecm: EntityComponentManager): Entity =
 #     echo a
 #     b.x = c.y
 macro forEach*(args: varargs[untyped]): untyped =
-    let ecmVar = args[0]
-    var params = @[newEmptyNode()]
-    var types: seq[NimNode]
-    var paramNames: seq[NimNode]
-    for n in args:
-        if n.kind == nnkExprColonExpr:
-            params.add newIdentDefs(n[0], n[1])
-            paramNames.add n[0]
+    args.expectMinLen 3
+    args[0].expectKind nnkIdent
+    args[^1].expectKind nnkStmtList
 
-            types.add n[1]
-            if n[1].kind == nnkVarTy:
-                types[^1] = n[1][0]
+    let ecmVarIdent = args[0]
+    var paramsIdentDefs = @[newEmptyNode()]
+    var typeIdents: seq[NimNode]
+    for n in args[1..^2]:
+        n.expectKind nnkExprColonExpr
+        paramsIdentDefs.add newIdentDefs(n[0], n[1])
 
-    let bodyProcIdent = ident("bodyProc")
-    var bodyProcDef = newProc(
-        name = bodyProcIdent,
-        body = args[^1],
-        params = params
-    )
+        if n[1].kind == nnkVarTy:
+            typeIdents.add n[1][0]
+        else:
+            typeIdents.add n[1]
 
-    var iterCall = newCall(ident("iter"), ecmVar)
-    for t in types:
-        iterCall.add t
-        
+    let bodyProcIdent = ident("bodyProc")        
     let forLoopEntity = ident("entity")
 
     var bodyProcCall = newCall(bodyProcIdent)
-    for t in types:
-        bodyProcCall.add newCall(ident("get"), ecmVar, forLoopEntity, t)
-        
-    var forStmt = newNimNode(nnkForStmt)
-    forStmt.add forLoopEntity
-    forStmt.add iterCall
-    forStmt.add newStmtList(bodyProcCall)
+    for t in typeIdents:
+        bodyProcCall.add newCall(ident("get"), ecmVarIdent, forLoopEntity, t)
+    
+    newStmtList(
+        newBlockStmt(
+            newStmtList(
+                newProc(
+                    name = bodyProcIdent,
+                    body = args[^1],
+                    params = paramsIdentDefs
+                ),
+                newNimNode(nnkForStmt).add([
+                    forLoopEntity,
+                    newCall(ident("iter"), ecmVarIdent).add typeIdents,
+                    newStmtList(bodyProcCall)
+                ])
+            )
+        )
+    )
 
-
-    result = newStmtList(newBlockStmt(newStmtList(bodyProcDef, forStmt)))
 
 #----------------------------------------------#
 
@@ -299,6 +301,11 @@ forEach(ecm, f: var float, s: string):
 
 forEach(ecm, f: float):
     echo f
+
+forEach(ecm, f: var float, s: string):
+    echo s
+    f = 10.0
+
 
 ecm.remove(entity4)
 
