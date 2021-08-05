@@ -57,17 +57,17 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
         return cast[ref seq[T]](componentVectors[id])[]
 
 #----------------------------------------------#
-# TODO: check if componentTypeToEntity can replace numComponents
 # TODO: describe all the eigenartiges behaviour of this:
 # - rare and big objects should be passed as refs to the entity component manager, otherwiese alot of space will be wasted
 # - Components of type tuple may not work. Better use proper objects
 # TODO: add logging
 # TODO: clean up macro
+# TODO: fix slow performance(?)
+# TODO: fix compile error when using --gc:arc
 type Entity* = int
 type EntityComponentManager* = object
     componentVectors: ComponentVectors
     hasMask: seq[uint64]
-    numComponents: array[maxNumComponentTypes, int]
     componentTypeToEntity: array[maxNumComponentTypes, seq[Entity]]
     unusedEntities: seq[Entity]
 
@@ -125,7 +125,6 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     componentVector[entity] = component
 
     ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
-    ecm.numComponents[typeId(T)] += 1
     
     # sorting entities, such that while iterating over them we always have the smaller first and bigger last
     template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
@@ -137,7 +136,6 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
             if typeToEntity[i] < entity:
                 typeToEntity.insert(entity, i + 1)
                 break
-
 
 func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     if not ecm.has(entity):
@@ -152,7 +150,6 @@ func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
         )
     
     ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
-    ecm.numComponents[typeId(T)] -= 1
 
     template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
     let index =typeToEntity.find(entity)
@@ -183,8 +180,8 @@ func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): Typ
     var min = int.high
     for T in ComponentTypes.fields:
         let id = typeId(typeof T)
-        if min > ecm.numComponents[id]:
-            min = ecm.numComponents[id]
+        if min > ecm.componentTypeToEntity[id].len:
+            min = ecm.componentTypeToEntity[id].len
             result = id
 
 iterator iterInternal*(ecm: EntityComponentManager, ComponentTypes: tuple): Entity =
@@ -201,6 +198,10 @@ iterator iterAll*(ecm: EntityComponentManager): Entity =
         if ecm.has(entity):
             yield entity
 
+# usage example:
+# forEach(ecm, a: ComponentA, b: var ComponentB, c: ComponentC):
+#     echo a
+#     b.x = c.y
 macro forEach*(args: varargs[untyped]): untyped =
     let ecmVar = args[0]
     var params = @[newEmptyNode()]
@@ -221,8 +222,6 @@ macro forEach*(args: varargs[untyped]): untyped =
         body = args[^1],
         params = params
     )
-    echo bodyProcDef.treeRepr
-    echo "------------------"
 
     var iterCall = newCall(ident("iter"), ecmVar)
     for t in types:
@@ -239,15 +238,8 @@ macro forEach*(args: varargs[untyped]): untyped =
     forStmt.add iterCall
     forStmt.add newStmtList(bodyProcCall)
 
-    echo forStmt.treeRepr
-
-
-    echo "------------------"
 
     result = newStmtList(newBlockStmt(newStmtList(bodyProcDef, forStmt)))
-
-
-    echo result.treeRepr
 
 #----------------------------------------------#
 
@@ -311,17 +303,9 @@ forEach(ecm, f: float):
 
 ecm.remove(entity4)
 
-# for entity in ecm.iterAll():
-#     echo entity
+let entity7 = ecm.addEntity()
+let entity8 = ecm.addEntity()
+ecm.remove(entity7)
 
-
-# var c: ComponentVectors
-# c.get(float).add(0.5)
-# c.get(int).add(1234)
-# c.get(float).add(0.6)
-# echo c.get(float)
-# echo c.get(int)
-# echo c.get(int8)
-# type A = (int, float)
-# let a: uint64 = bitTypeId((float,))
-# echo toBin(a.int64, 64)
+for entity in ecm.iterAll():
+    echo entity

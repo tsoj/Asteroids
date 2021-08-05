@@ -1,5 +1,6 @@
 import ecSystem
 import macros
+#import nimprof
 
 type
     ComponentA = object
