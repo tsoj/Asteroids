@@ -2,6 +2,7 @@ import macros
 import macrocache
 import strutils
 import typetraits
+import algorithm
 
 #----------------------------------------------#
 
@@ -61,7 +62,6 @@ func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
 # - rare and big objects should be passed as refs to the entity component manager, otherwiese alot of space will be wasted
 # - Components of type tuple may not work. Better use proper objects
 # TODO: add logging
-# TODO: fix slow performance(?)
 type Entity* = int
 type EntityComponentManager* = object
     componentVectors: ComponentVectors
@@ -121,19 +121,8 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
     componentVector[entity] = component
-
     ecm.hasMask[entity] = ecm.hasMask[entity] or bitTypeId(T)
-    
-    # sorting entities, such that while iterating over them we always have the smaller first and bigger last
-    template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
-    if typeToEntity.len == 0:
-        typeToEntity.add entity
-    else:
-        for i in countdown(typeToEntity.high, typeToEntity.low):
-            assert typeToEntity[i] != entity
-            if typeToEntity[i] < entity:
-                typeToEntity.insert(entity, i + 1)
-                break
+    ecm.componentTypeToEntity[typeId(T)].add entity
 
 func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     if not ecm.has(entity):
@@ -150,9 +139,9 @@ func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
 
     template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
-    let index =typeToEntity.find(entity)
+    let index = typeToEntity.find(entity)
     if index != -1:
-        typeToEntity.delete(index)
+        typeToEntity.del(index)
 
 template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
     if not ecm.has(entity):
