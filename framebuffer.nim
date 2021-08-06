@@ -30,16 +30,19 @@ proc newFramebuffer*(transparentRune = "\0".toRune): Framebuffer =
     result.clear()        
 
 proc print*(framebuffer: Framebuffer) =
+    hideCursor()
     setCursorPos(0, 0)
     doAssert framebuffer.buffer.len == terminalHeight()
     doAssert framebuffer.buffer.len == framebuffer.height
     for index, line in framebuffer.buffer.pairs:
         doAssert line.len == terminalWidth()
         doAssert line.len == framebuffer.width
+        setCursorXPos(0)
         stdout.write($line)
         if index < framebuffer.buffer.len - 1:
             stdout.write("\n")
     stdout.flushFile()
+    showCursor()
 
 func add*(framebuffer: var Framebuffer, image: openArray[seq[Rune]], x, y: int) =
     doAssert y + image.len <= framebuffer.height
