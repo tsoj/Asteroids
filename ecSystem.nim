@@ -18,8 +18,11 @@ func typeId*(T:typedesc): TypeId =
         inc nextTypeId
     id
 
+func bitTypeId(id: TypeId): uint64 =
+    (0b10'u64 shl id.uint64)
+
 func bitTypeId(T: typedesc): uint64 =
-    let bitID {.global.} = (0b10'u64 shl typeId(T).uint64)
+    let bitID {.global.} = bitTypeId(typeId(T))
     {.cast(noSideEffect).}:
         bitID
 
@@ -38,20 +41,22 @@ func bitTypeIdUnion(Ts: tuple): uint64 =
 
 type ComponentVectors = seq[ref seq[int8]]
 
-func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
+func get(componentVectors: var ComponentVectors, T: typedesc): ref seq[T] =
     static: doAssert (ref seq[int8]).default == nil
     let id = typeId(T)
     if componentVectors.len <= id:
         componentVectors.setLen(id + 1)
     if componentVectors[id] == nil:
+        static: doAssert typeof(new seq[T]) is ref seq[T]
         componentVectors[id] = cast[ref seq[int8]](new seq[T])
     assert componentVectors[id] != nil
-    cast[ref seq[T]](componentVectors[id])[]
+    cast[ref seq[T]](componentVectors[id])
 
-func get(componentVectors: ComponentVectors, T: typedesc): seq[T] =
+func get(componentVectors: ComponentVectors, T: typedesc): ref seq[T] =
     let id = typeId(T)
     if componentVectors.len > id and componentVectors[id] != nil:
-        return cast[ref seq[T]](componentVectors[id])[]
+        return cast[ref seq[T]](componentVectors[id])
+    new seq[T]
 
 #----------------------------------------------#
 # TODO: describe all the eigenartiges behaviour of this:
@@ -95,9 +100,19 @@ func addEntity*(ecm: var EntityComponentManager): Entity =
     assert result < ecm.hasMask.len
     assert ecm.hasMask[result] == entityBit
 
+func remove(typeToEntity: var seq[Entity], entity: Entity) =
+    let index = typeToEntity.find(entity)
+    assert index != -1
+    typeToEntity.del(index)
+
 func remove*(ecm: var EntityComponentManager, entity: Entity) =
     if not ecm.has(entity):
         raise newException(KeyError, "Entity cannot be removed: Entity " & $entity & " does not exist.")
+
+    for id in 0..<maxNumComponentTypes:
+        if (ecm.hasMask[entity] and bitTypeId(id)) != 0:
+            ecm.componentTypeToEntity[id].remove(entity)
+
     ecm.hasMask[entity] = 0
     ecm.unusedEntities.add(entity)
 
@@ -113,7 +128,7 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
             "Component cannot be added to entity: Entity " & $entity & " already has component " & $T & "."
         )
     
-    template componentVector: auto = ecm.componentVectors.get(T)
+    template componentVector: auto = ecm.componentVectors.get(T)[]
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
     componentVector[entity] = component
@@ -134,10 +149,7 @@ func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
     
     ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
 
-    template typeToEntity: auto = ecm.componentTypeToEntity[typeId(T)]
-    let index = typeToEntity.find(entity)
-    if index != -1:
-        typeToEntity.del(index)
+    ecm.componentTypeToEntity[typeId(T)].remove(entity)
 
 template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
     if not ecm.has(entity):
@@ -151,13 +163,15 @@ template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, 
             "Component cannot be accessed: Entity " & $entity & " does not have component " & $T & "."
         )
     template componentVector: auto = ecm.componentVectors.get(T)
-    assert componentVector.len > entity
-    componentVector[entity]
+    assert componentVector[].len > entity
+    addr componentVector[][entity]
 
 func get*[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
+    ecm.getTemplate(entity, T)[]
+func getInternal*(ecm: EntityComponentManager, entity: Entity, T: typedesc): ptr T =
     ecm.getTemplate(entity, T)
 func get*(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
-    ecm.getTemplate(entity, T)
+    ecm.getInternal(entity, T)[]
 
 func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): TypeId =
     var min = int.high
