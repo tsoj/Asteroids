@@ -7,6 +7,18 @@ import
     random,
     os
 
+type
+    Image = object
+        data: seq[seq[Rune]]
+    Position = object
+        x,y: float
+    Asteroid = object
+        value: int
+    Star = distinct int
+    Player = object
+        score: int
+    Bullet = distinct int
+
 const transparentRune = "`".toRune
 
 const asteroidMiddleTemplates = [
@@ -57,19 +69,12 @@ const asteroidTopTemplates = [
     "`OOO```".toRunes
 ]
 
-
-
-type
-    Image = object
-        data: seq[seq[Rune]]
-    Position = object
-        x,y: float
-    Asteroid = object
-        value: int
-    Star = distinct int
-    Player = object
-        score: int
-    Bullet = distinct int
+const spaceshipImg = Image(data: @[
+    "``Λ``".toRunes,
+    "`/^\\`".toRunes,
+    "/___\\".toRunes,
+    "`^^^`".toRunes
+])
 
 func isOk(img: Image): bool =
     if img.data.len == 0:
@@ -156,6 +161,7 @@ proc game() =
                             fb.add(randomStarImage().data, x, y)
 
                 fb.add(randomAsteroidImage().data, x = 20, y = 30)
+                fb.add(spaceshipImg.data, x = 50, y = 10)
             else:
                 discard
         fb.print()
