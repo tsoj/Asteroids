@@ -155,13 +155,9 @@ proc randomAsteroidImage(): Image =
                 elif rand(1.0) < 0.2:
                     rune = "0".toRune
 
-proc randomStarImage(): Image =
+
+proc starImage(): Image =
     result.data = @[@[".".toRune]]
-    if rand(1.0) > 0.9:
-        if rand(1.0) > 0.1:
-            result.data[0][0] = "✦".toRune
-        else:
-            result.data[0][0] = "✧".toRune
 
 type Box = object
     pos: Position
@@ -195,13 +191,13 @@ proc addAsteroid(ecm: var EntityComponentManager, box: Box) =
     box.dims.x -= ecm.get(entity, Image).width.float
     box.dims.y -= ecm.get(entity, Image).height.float
     ecm.add(entity, randomPositionInBox(box))
-    ecm.add(entity, Velocity(x: 0.0, y: 12.0))
+    ecm.add(entity, Velocity(x: rand(-7.0..7.0), y: rand(10.0..15.0)))
 
 proc addStar(ecm: var EntityComponentManager, box: Box) =
     let entity = ecm.addEntity()
     ecm.add(entity, Star(0))
     ecm.add(entity, RenderPriority(0))
-    ecm.add(entity, randomStarImage())
+    ecm.add(entity, starImage())
     ecm.add(entity, randomPositionInBox(box))
     ecm.add(entity, Velocity(x: 0.0, y: spaceshipMaxVelocityY))    
 

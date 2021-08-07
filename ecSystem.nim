@@ -1,7 +1,9 @@
-import macros
-import macrocache
-import strutils
-import typetraits
+import
+    macros,
+    macrocache,
+    strutils,
+    typetraits,
+    tables
 
 const nextTypeId = CacheCounter("nextTypeId")
 
@@ -39,23 +41,40 @@ func bitTypeIdUnion(Ts: tuple): uint64 =
 
 #----------------------------------------------#
 
-type ComponentVectors = seq[ref seq[int8]]
+type ComponentVectors = object
+    vec: seq[ref seq[int8]]
+    destroyFunctions: Table[int, proc(vec: ref seq[int8])]
+
+proc `=destroy`(x: var ComponentVectors) =
+    for id, destroyFunction in x.destroyFunctions.mpairs:
+        destroyFunction(x.vec[id])
+    `=destroy`(x.vec)
+    `=destroy`(x.destroyFunctions)
 
 func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
     static: doAssert (ref seq[int8]).default == nil
     let id = typeId(T)
-    if componentVectors.len <= id:
-        componentVectors.setLen(id + 1)
-    if componentVectors[id] == nil:
+
+    if componentVectors.vec.len <= id:
+        componentVectors.vec.setLen(id + 1)
+
+    if componentVectors.vec[id] == nil:
+        doAssert not (id in componentVectors.destroyFunctions)
+        componentVectors.destroyFunctions[id] = proc(vec: ref seq[int8]) =
+            doAssert vec != nil
+            for e in cast[ref seq[T]](vec)[].mitems:
+                `=destroy`(e)
+
         static: doAssert typeof(new seq[T]) is ref seq[T]
-        componentVectors[id] = cast[ref seq[int8]](new seq[T])
-    assert componentVectors[id] != nil
-    cast[ref seq[T]](componentVectors[id])[]
+        componentVectors.vec[id] = cast[ref seq[int8]](new seq[T])
+
+    assert componentVectors.vec[id] != nil
+    cast[ref seq[T]](componentVectors.vec[id])[]
 
 func get(componentVectors: ComponentVectors, T: typedesc): lent seq[T] =
     let id = typeId(T)
-    doAssert componentVectors.len > id and componentVectors[id] != nil
-    cast[ref seq[T]](componentVectors[id])[]
+    doAssert componentVectors.vec.len > id and componentVectors.vec[id] != nil
+    cast[ref seq[T]](componentVectors.vec[id])[]
 
 #----------------------------------------------#
 # TODO: describe all the eigenartiges behaviour of this:

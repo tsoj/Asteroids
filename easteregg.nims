@@ -1,5 +1,5 @@
 
---define:release
+--define:debug
 --gc:arc
 --threads:on
 --styleCheck:hint
