@@ -8,7 +8,7 @@ func toRune*(s: string): Rune =
     s.runeAt(0)
 
 type
-    Framebuffer* = object {.requiresInit.}
+    Framebuffer* = object
         buffer: seq[seq[Rune]]
         width, height: int
         transparentRune: Rune

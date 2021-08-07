@@ -157,7 +157,7 @@ proc randomAsteroidImage(): Image =
 
 proc randomStarImage(): Image =
     result.data = @[@[".".toRune]]
-    if false and rand(1.0) > 0.9:
+    if rand(1.0) > 0.9:
         if rand(1.0) > 0.1:
             result.data[0][0] = "✦".toRune
         else:
@@ -248,11 +248,17 @@ proc game() =
 
     var last = now()
     while true:
+        ecm.renderStep(fb)
+        # Don't waste CPU cycles if we don't notice a difference anyway
+        while now() - last < initDuration(milliseconds = 10):
+            sleep(1)
         let delta = now() - last
         last = now()
         ecm.physicsStep(delta)
         ecm.respawner(fb)
-        ecm.renderStep(fb)
+        sleep(16)
+
+        
 
         for input in inputCatcher.get():
             if input in quitChars:

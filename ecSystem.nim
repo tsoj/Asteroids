@@ -41,7 +41,7 @@ func bitTypeIdUnion(Ts: tuple): uint64 =
 
 type ComponentVectors = seq[ref seq[int8]]
 
-func get(componentVectors: var ComponentVectors, T: typedesc): ref seq[T] =
+func get(componentVectors: var ComponentVectors, T: typedesc): var seq[T] =
     static: doAssert (ref seq[int8]).default == nil
     let id = typeId(T)
     if componentVectors.len <= id:
@@ -50,13 +50,12 @@ func get(componentVectors: var ComponentVectors, T: typedesc): ref seq[T] =
         static: doAssert typeof(new seq[T]) is ref seq[T]
         componentVectors[id] = cast[ref seq[int8]](new seq[T])
     assert componentVectors[id] != nil
-    cast[ref seq[T]](componentVectors[id])
+    cast[ref seq[T]](componentVectors[id])[]
 
-func get(componentVectors: ComponentVectors, T: typedesc): ref seq[T] =
+func get(componentVectors: ComponentVectors, T: typedesc): lent seq[T] =
     let id = typeId(T)
-    if componentVectors.len > id and componentVectors[id] != nil:
-        return cast[ref seq[T]](componentVectors[id])
-    new seq[T]
+    doAssert componentVectors.len > id and componentVectors[id] != nil
+    cast[ref seq[T]](componentVectors[id])[]
 
 #----------------------------------------------#
 # TODO: describe all the eigenartiges behaviour of this:
@@ -128,7 +127,7 @@ func add*[T](ecm: var EntityComponentManager, entity: Entity, component: T) =
             "Component cannot be added to entity: Entity " & $entity & " already has component " & $T & "."
         )
     
-    template componentVector: auto = ecm.componentVectors.get(T)[]
+    template componentVector: auto = ecm.componentVectors.get(T)
     if componentVector.len <= entity:
         componentVector.setLen(entity + 1)
     componentVector[entity] = component
@@ -163,15 +162,13 @@ template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, 
             "Component cannot be accessed: Entity " & $entity & " does not have component " & $T & "."
         )
     template componentVector: auto = ecm.componentVectors.get(T)
-    assert componentVector[].len > entity
-    addr componentVector[][entity]
+    assert componentVector.len > entity
+    componentVector[entity]
 
 func get*[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
-    ecm.getTemplate(entity, T)[]
-func getInternal*(ecm: EntityComponentManager, entity: Entity, T: typedesc): ptr T =
     ecm.getTemplate(entity, T)
-func get*(ecm: EntityComponentManager, entity: Entity, T: typedesc): T =
-    ecm.getInternal(entity, T)[]
+func get*[T](ecm: EntityComponentManager, entity: Entity, desc: typedesc[T]): lent T =
+    ecm.getTemplate(entity, T)
 
 func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): TypeId =
     var min = int.high
