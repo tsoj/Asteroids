@@ -56,7 +56,7 @@ int col(int cl1, int rw1, int w1, int h1, char sp1[h1][w1], int cl2, int rw2, in
             for (int r2 = 0; sp1[r1][c1] && r2 < h2; ++r2)
                 for (int c2 = 0; c2 < w2; ++c2)
                     if (sp2[r2][c2] && cl1 + c1 == cl2 + c2 && rw1 + r1 == rw2 + r2)
-                        return 0;
+                        return 1;
     return 0;
 }
 typedef struct

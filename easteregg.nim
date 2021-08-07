@@ -23,6 +23,8 @@ type
         score: int
     Bullet = distinct int
     RenderPriority = 0..2
+    Exhaust = object
+        offsets: seq[(int, int)]
 
 const transparentRune = "`".toRune
 
@@ -82,11 +84,12 @@ const spaceshipImg = Image(data: @[
 ])
 
 const bulletImg = Image(data: @["▲".toRunes])
+const bulletExhaust = Exhaust(offsets: @[(0,1)])
 
 const spaceshipMaxVelocityY = 15.0
 const spaceshipMaxVelocityX = 20.0
 
-proc getBulletExhaust(): Rune =
+proc getExhaust(): Rune =
     const possibleRunes = [
         "'".toRune,
         "ʼ".toRune,
@@ -150,7 +153,7 @@ proc randomAsteroidImage(): Image =
     for line in result.data.mitems:
         for rune in line.mitems:
             if rune == "O".toRune:
-                if rand(1.0) < 0.2:
+                if rand(1.0) < 0.3:
                     rune = "o".toRune
                 elif rand(1.0) < 0.2:
                     rune = "0".toRune
@@ -180,6 +183,10 @@ proc renderStep(ecm: EntityComponentManager, fb: var Framebuffer) =
         forEach(ecm, p: Position, img: Image, rp: RenderPriority):
             if rp == renderPriority:
                 fbPtr[].add(img.data, x = p.x.int, y = p.y.int)
+        forEach(ecm, p: Position, exhaust: Exhaust, rp: RenderPriority):
+            if rp == renderPriority:
+                for (xOffset, yOffset) in exhaust.offsets:
+                    fbPtr[].add(getExhaust(), x = p.x.int + xOffset, y = p.y.int + yOffset)
     fb.print()
 
 proc addAsteroid(ecm: var EntityComponentManager, box: Box) =
@@ -201,11 +208,17 @@ proc addStar(ecm: var EntityComponentManager, box: Box) =
     ecm.add(entity, randomPositionInBox(box))
     ecm.add(entity, Velocity(x: 0.0, y: spaceshipMaxVelocityY))    
 
-proc getAboveScreenBox(fb: Framebuffer, doubleHeight = false): Box =
+proc getScreenBox(fb: Framebuffer): Box =
     result.pos.x = 0.0
     result.dims.x = fb.width.float
+    result.pos.y = 0.0
+    result.dims.y = fb.height.float
+
+proc getAboveScreenBox(fb: Framebuffer, doubleHeight = false): Box =
+    result = fb.getScreenBox
     result.pos.y = -fb.height.float * (if doubleHeight: 2 else: 1)
-    result.dims.y = fb.height.float * (if doubleHeight: 2 else: 1)
+    if doubleHeight:
+        result.dims.y *= 2.0
 
 proc respawner(ecm: var EntityComponentManager, fb: Framebuffer) =
     var removeQueue: seq[Entity]
@@ -225,6 +238,21 @@ proc respawner(ecm: var EntityComponentManager, fb: Framebuffer) =
             ecm.addStar(spawnBox)
         ecm.remove(entity)
 
+proc limitPlayer(ecm: var EntityComponentManager, fb: Framebuffer) =
+    let fbHeight = fb.height
+    let fbWidth = fb.width
+    forEach(ecm, player: Player, p: var Position, img: Image):
+        p.x = clamp(
+            p.x,
+            0.0,
+            (fbWidth - img.width).float
+        )
+        p.y = clamp(
+            p.y,
+            0.0,
+            (fbHeight - img.height).float
+        )
+
 proc game() =
     var
         ecm: EntityComponentManager
@@ -239,8 +267,16 @@ proc game() =
 
     for i in 1..numAsteroid:
         ecm.addAsteroid(fb.getAboveScreenBox(doubleHeight = true))
-    for i in 1..numStars:
-        ecm.addStar(fb.getAboveScreenBox(doubleHeight = true))
+    for i in 1..(numStars div 2):
+        ecm.addStar(fb.getScreenBox())
+        ecm.addStar(fb.getAboveScreenBox())
+
+    let playerEntity = ecm.addEntity()
+    ecm.add(playerEntity, Player(score: 0))
+    ecm.add(playerEntity, RenderPriority(2))
+    ecm.add(playerEntity, spaceshipImg)
+    ecm.add(playerEntity, Position(x: (fb.width div 2).float, y: (fb.height div 2).float))
+    ecm.add(playerEntity, Velocity(x: 0.0, y: 0.0))
 
     var last = now()
     while true:
@@ -251,8 +287,8 @@ proc game() =
         let delta = now() - last
         last = now()
         ecm.physicsStep(delta)
+        ecm.limitPlayer(fb)
         ecm.respawner(fb)
-        sleep(16)
 
         
 
@@ -260,16 +296,16 @@ proc game() =
             if input in quitChars:
                 return
             case input:
-            # of ' ':
-            #     fb.clear()
-            #     for x in 0..<fb.width:
-            #         for y in 0..<fb.height:
-            #             if rand(1.0) < 0.01:
-            #                 fb.add(randomStarImage().data, x, y)
-
-            #     fb.add(randomAsteroidImage().data, x = 20, y = 30)
-            #     fb.add(spaceshipImg.data, x = 50, y = 10)
-            #     fb.add(bulletImg.data, x = 50, y = 5)
+            of 'a', 'd':
+                ecm.get(playerEntity, Velocity) = Velocity(
+                    x: spaceshipMaxVelocityX * (if input == 'a': -1 else: 1),
+                    y: 0.0
+                )
+            of 's', 'w':
+                ecm.get(playerEntity, Velocity) = Velocity(
+                    x: 0.0,
+                    y: spaceshipMaxVelocityY * (if input == 'w': -1 else: 1)
+                )
             else:
                 discard
 
