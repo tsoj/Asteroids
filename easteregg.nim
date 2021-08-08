@@ -6,7 +6,8 @@ import
     terminal,
     random,
     os,
-    times
+    times,
+    strformat
 
 type
     Image = object
@@ -21,6 +22,11 @@ type
     Star = distinct int
     Player = object
         score: int
+    BulletMagazine = object
+        last: DateTime
+        refillTime: Duration
+        magazine: int
+        capacity: int
     Bullet = distinct int
     RenderPriority = 0..2
     Exhaust = object
@@ -91,6 +97,8 @@ const spaceshipMaxVelocityX = 20.0
 
 proc getExhaust(): Rune =
     const possibleRunes = [
+        "*".toRune,
+        "^".toRune,
         "'".toRune,
         "ʼ".toRune,
         "˟".toRune,
@@ -176,7 +184,7 @@ func physicsStep(ecm: var EntityComponentManager, delta: Duration) =
         p.x += v.x * deltaS
         p.y += v.y * deltaS
 
-proc renderStep(ecm: EntityComponentManager, fb: var Framebuffer) =
+proc drawStep(ecm: EntityComponentManager, fb: var Framebuffer) =
     fb.clear()
     let fbPtr = addr fb
     for renderPriority in RenderPriority.low..RenderPriority.high:
@@ -187,7 +195,6 @@ proc renderStep(ecm: EntityComponentManager, fb: var Framebuffer) =
             if rp == renderPriority:
                 for (xOffset, yOffset) in exhaust.offsets:
                     fbPtr[].add(getExhaust(), x = p.x.int + xOffset, y = p.y.int + yOffset)
-    fb.print()
 
 proc addAsteroid(ecm: var EntityComponentManager, box: Box) =
     let entity = ecm.addEntity()
@@ -252,6 +259,59 @@ proc limitPlayer(ecm: var EntityComponentManager, fb: Framebuffer) =
             0.0,
             (fbHeight - img.height).float
         )
+# TODO: fix ever living bullets
+proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshipImg: Image) =
+    let entity = ecm.addEntity()
+    ecm.add(entity, Bullet(0))
+    ecm.add(entity, RenderPriority(1))
+    ecm.add(entity, bulletImg)
+    ecm.add(entity, bulletExhaust)
+    ecm.add(entity, Velocity(x: 0.0, y: -20.0))
+    ecm.add(entity, Position(
+        x: spaceshipPos.x + spaceshipImg.width.float / 2.0,
+        y: spaceshipPos.y
+    ))
+
+proc addPlayer(ecm: var EntityComponentManager, fb: Framebuffer): Entity =
+    result = ecm.addEntity()
+    ecm.add(result, Player(score: 0))
+    ecm.add(result, RenderPriority(2))
+    ecm.add(result, spaceshipImg)
+    ecm.add(result, Position(x: (fb.width div 2).float, y: (fb.height div 2).float))
+    ecm.add(result, Velocity(x: 0.0, y: 0.0))
+    ecm.add(result, BulletMagazine(
+        last: now(),
+        magazine: 5,
+        refillTime: initDuration(seconds = 1),
+        capacity: 5
+    ))
+
+proc refillBulletMagazin(ecm: var EntityComponentManager) =
+    forEach(ecm, bulletMagazine: var BulletMagazine):
+        if now() - bulletMagazine.last > bulletMagazine.refillTime:
+            bulletMagazine.magazine = min(bulletMagazine.capacity, bulletMagazine.magazine + 1)
+            bulletMagazine.last = now()
+
+proc getInfoImage(score, bulletMagazin, bulletMagazineCapacity: int, ): Image =
+    doAssert bulletMagazin <= bulletMagazineCapacity
+    var infoString = "score: " & fmt"{score:>4}" & "┃"
+    for i in 0..<bulletMagazin:
+        infoString &= "▲"
+    for i in bulletMagazin..<bulletMagazineCapacity:
+        infoString &= "△"
+    infoString &= "┃"
+    let line1 = infoString.toRunes
+    var line2 = line1
+    line2[^1] = "┛".toRune
+    for i, rune in line2.mpairs:
+        if i == line2.len - 1:
+            continue
+        if rune == "┃".toRune:
+            rune = "┻".toRune
+        else:
+            rune = "━".toRune
+    Image(data: @[line1, line2])
+
 
 proc game() =
     var
@@ -271,16 +331,20 @@ proc game() =
         ecm.addStar(fb.getScreenBox())
         ecm.addStar(fb.getAboveScreenBox())
 
-    let playerEntity = ecm.addEntity()
-    ecm.add(playerEntity, Player(score: 0))
-    ecm.add(playerEntity, RenderPriority(2))
-    ecm.add(playerEntity, spaceshipImg)
-    ecm.add(playerEntity, Position(x: (fb.width div 2).float, y: (fb.height div 2).float))
-    ecm.add(playerEntity, Velocity(x: 0.0, y: 0.0))
-
+    # TODO put this in a function
+    let playerEntity = ecm.addPlayer(fb)
     var last = now()
     while true:
-        ecm.renderStep(fb)
+
+        ecm.drawStep(fb)
+        fb.add(getInfoImage(
+            ecm.get(playerEntity, Player).score,
+            ecm.get(playerEntity, BulletMagazine).magazine,
+            ecm.get(playerEntity, BulletMagazine).capacity
+        ).data, x = 0, y = 0)
+        fb.print()
+
+
         # Don't waste CPU cycles if we don't notice a difference anyway
         while now() - last < initDuration(milliseconds = 10):
             sleep(1)
@@ -289,6 +353,7 @@ proc game() =
         ecm.physicsStep(delta)
         ecm.limitPlayer(fb)
         ecm.respawner(fb)
+        ecm.refillBulletMagazin()
 
         
 
@@ -306,12 +371,12 @@ proc game() =
                     x: 0.0,
                     y: spaceshipMaxVelocityY * (if input == 'w': -1 else: 1)
                 )
+            of ' ':
+                if ecm.get(playerEntity, BulletMagazine).magazine > 0:
+                    ecm.addBullet(ecm.get(playerEntity, Position), ecm.get(playerEntity, Image))
+                    ecm.get(playerEntity, BulletMagazine).magazine -= 1
             else:
                 discard
-
-        
-        # fb.add(getBulletExhaust(), x = 50, y = 6)
-        # fb.print()
         
 
 

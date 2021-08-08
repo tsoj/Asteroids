@@ -1,6 +1,5 @@
 import
     terminal,
-    threadpool,
     unicode
 
 func toRune*(s: string): Rune =
@@ -12,7 +11,6 @@ type
         buffer: seq[seq[Rune]]
         width, height: int
         transparentRune: Rune
-        thread: FlowVar[bool]
 
 func width*(framebuffer: Framebuffer): int = framebuffer.width
 func height*(framebuffer: Framebuffer): int = framebuffer.height
@@ -23,7 +21,6 @@ func clear*(framebuffer: var Framebuffer, fillWith = " ".toRune) =
             rune = fillWith
 
 proc newFramebuffer*(transparentRune = "\0".toRune): Framebuffer =
-    result.thread = FlowVar[bool]()
     result.transparentRune = transparentRune
     result.height = terminalHeight()
     result.width = terminalWidth()
@@ -32,10 +29,7 @@ proc newFramebuffer*(transparentRune = "\0".toRune): Framebuffer =
         line.setLen(result.width)
     result.clear()
 
-proc `=destroy`*(framebuffer: var Framebuffer) =
-    discard ^framebuffer.thread
-
-proc printInThread(framebuffer: Framebuffer): bool =
+proc print*(framebuffer: Framebuffer) =
     hideCursor()
     doAssert framebuffer.buffer.len == terminalHeight()
     doAssert framebuffer.buffer.len == framebuffer.height
@@ -46,10 +40,6 @@ proc printInThread(framebuffer: Framebuffer): bool =
         stdout.write($line)
     stdout.flushFile()
     showCursor()
-
-proc print*(framebuffer: var Framebuffer) =
-    discard ^framebuffer.thread
-    framebuffer.thread = spawn printInThread(framebuffer)
 
 func add*(framebuffer: var Framebuffer, image: openArray[seq[Rune]], x, y: int) =
     for yOffset, line in image.pairs:
