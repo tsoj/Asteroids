@@ -189,6 +189,13 @@ func get*[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T])
 func get*[T](ecm: EntityComponentManager, entity: Entity, desc: typedesc[T]): lent T =
     ecm.getTemplate(entity, T)
 
+template `[]`*(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
+    ecm.get(entity, T)
+template `[]=`*[T](ecm: var EntityComponentManager, entity: Entity, t: T) =
+    ecm.get(entity, typedesc[T]) = t
+    
+    
+
 func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): TypeId =
     var min = int.high
     for T in ComponentTypes.fields:

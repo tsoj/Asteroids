@@ -3,7 +3,6 @@ import
     inputCatcher,
     ecSystem,
     unicode,
-    terminal,
     random,
     os,
     times,
@@ -26,11 +25,11 @@ type
     BulletMagazine = object
         last: DateTime
         refillTime: Duration
-        magazine: int
+        content: int
         capacity: int
     Bullet = object
         whoShot: Entity
-    RenderPriority = -1..2
+    RenderPriority = 0..3
     Exhaust = object
         offsets: seq[(int, int)]
     Timer = object
@@ -38,6 +37,9 @@ type
         duration: Duration
     Dust = object
         chancePerSec: float
+    Box = object
+        pos: Position
+        dims: Vec2
 
 const transparentRune = "`".toRune
 
@@ -81,7 +83,6 @@ const asteroidMiddleTemplates = [
         "OOOOOOO".toRunes
     ]
 ]
-
 const asteroidTopTemplates = [
     "`OOOOO`".toRunes,
     "``OOOO`".toRunes,
@@ -90,6 +91,18 @@ const asteroidTopTemplates = [
     "``OOO``".toRunes,
     "`OOO```".toRunes
 ]
+proc asteroidImage(): Image =
+    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
+    result.data.add asteroidMiddleTemplates[rand(asteroidMiddleTemplates.high)]
+    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
+    for line in result.data.mitems:
+        for rune in line.mitems:
+            if rune == "O".toRune:
+                if rand(1.0) < 0.3:
+                    rune = "o".toRune
+                elif rand(1.0) < 0.2:
+                    rune = "0".toRune
+
 
 const spaceshipImg = Image(data: @[
     "``Λ``".toRunes,
@@ -100,11 +113,7 @@ const spaceshipImg = Image(data: @[
 
 const bulletImg = Image(data: @["▲".toRunes])
 const bulletExhaust = Exhaust(offsets: @[(0,1)])
-
-const spaceshipMaxVelocityY = 15.0
-const spaceshipMaxVelocityX = 20.0
-
-proc getExhaust(): Rune =
+proc exhaustRune(): Rune =
     const possibleRunes = [
         "*".toRune,
         "^".toRune,
@@ -117,6 +126,20 @@ proc getExhaust(): Rune =
     ]
     possibleRunes[rand(possibleRunes.high)]
 
+proc starImage(): Image =
+    result.data = @[".".toRunes]
+    if rand(1.0) < 0.05:
+        result.data[0] = "✦".toRunes
+
+const spaceshipMaxVelocity = Velocity(x: 20.0, y: 15.0)
+const starVelocity = Velocity(x: 0.0, y: spaceshipMaxVelocity.y)
+proc asteroidVelocity(): Velocity = Velocity(x: rand(-7.0..7.0), y: rand(10.0..15.0))
+const bulletVelocity = Velocity(x: 0.0, y: -20.0)
+
+const bulletMagazineCapacity = 5
+const bulletMagazineStartContent = min(5, bulletMagazineCapacity)
+const bulletMagazineRefillTime = initDuration(seconds = 1)
+
 func isOk(img: Image): bool =
     if img.data.len == 0:
         return false
@@ -127,14 +150,13 @@ func isOk(img: Image): bool =
 
 func width(img: Image): int =
     doAssert img.data.len > 0
-    assert img.isOk
+    doAssert img.isOk
     img.data[0].len
 
 func height(img: Image): int =
     img.data.len
 
-
-func areColliding(posA, posB: Position, imgA, imgB: Image): bool =
+func colliding(posA, posB: Position, imgA, imgB: Image): bool =
     let
         xA = posA.x.int
         yA = posA.y.int
@@ -146,6 +168,7 @@ func areColliding(posA, posB: Position, imgA, imgB: Image): bool =
         top = max(yA, yB)
         bottom = min(yA + imgA.height - 1, yB + imgB.height - 1)
     
+    # TODO: maybe remove this, at least making xy naming more consistent
     template getRune(img: Image, xImg, yImg, xAt, yAt): Rune =
         let
             x = xAt - xImg
@@ -165,39 +188,17 @@ func areColliding(posA, posB: Position, imgA, imgB: Image): bool =
                 return true
     false
 
-proc randomAsteroidImage(): Image =
-    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
-    result.data.add asteroidMiddleTemplates[rand(asteroidMiddleTemplates.high)]
-    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
-    for line in result.data.mitems:
-        for rune in line.mitems:
-            if rune == "O".toRune:
-                if rand(1.0) < 0.3:
-                    rune = "o".toRune
-                elif rand(1.0) < 0.2:
-                    rune = "0".toRune
-
-
-proc starImage(): Image =
-    result.data = @[".".toRunes]
-    if rand(1.0) < 0.05:
-        result.data[0] = "✦".toRunes
-
-type Box = object
-    pos: Position
-    dims: Vec2
-
 proc randomPositionInBox(b: Box): Position =
     result.x = rand(b.pos.x..(b.pos.x + b.dims.x)).int.float
     result.y = rand(b.pos.y..(b.pos.y + b.dims.y)).int.float
 
-func physicsStep(ecm: var EntityComponentManager, delta: Duration) =
+func physics(ecm: var EntityComponentManager, delta: Duration) =
     let deltaS = delta.inMicroseconds.float / 1_000_000.0
     forEach(ecm, p: var Position, v: Velocity):
         p.x += v.x * deltaS
         p.y += v.y * deltaS
 
-proc drawStep(ecm: EntityComponentManager, fb: var Framebuffer) =
+proc draw(ecm: EntityComponentManager, fb: var Framebuffer) =
     fb.clear()
     let fbPtr = addr fb
     for renderPriority in RenderPriority.low..RenderPriority.high:
@@ -207,48 +208,49 @@ proc drawStep(ecm: EntityComponentManager, fb: var Framebuffer) =
         forEach(ecm, p: Position, exhaust: Exhaust, rp: RenderPriority):
             if rp == renderPriority:
                 for (xOffset, yOffset) in exhaust.offsets:
-                    fbPtr[].add(getExhaust(), x = p.x.int + xOffset, y = p.y.int + yOffset)
+                    fbPtr[].add(exhaustRune(), x = p.x.int + xOffset, y = p.y.int + yOffset)
 
 proc addAsteroid(ecm: var EntityComponentManager, box: Box) =
     let entity = ecm.addEntity()
     ecm.add(entity, Asteroid(0))
-    ecm.add(entity, RenderPriority(1))
-    ecm.add(entity, randomAsteroidImage())
+    ecm.add(entity, RenderPriority(2))
+    ecm.add(entity, asteroidImage())
     var box = box
-    box.dims.x -= ecm.get(entity, Image).width.float
-    box.dims.y -= ecm.get(entity, Image).height.float
+    box.dims.x -= ecm[entity, Image].width.float
+    box.dims.y -= ecm[entity, Image].height.float
     ecm.add(entity, randomPositionInBox(box))
     ecm.add(entity, Velocity(x: rand(-7.0..7.0), y: rand(10.0..15.0)))
 
 proc addStar(ecm: var EntityComponentManager, box: Box) =
     let entity = ecm.addEntity()
     ecm.add(entity, Star(0))
-    ecm.add(entity, RenderPriority(0))
+    ecm.add(entity, RenderPriority(1))
     ecm.add(entity, starImage())
     ecm.add(entity, randomPositionInBox(box))
-    ecm.add(entity, Velocity(x: 0.0, y: spaceshipMaxVelocityY))    
+    ecm.add(entity, starVelocity)    
 
-proc getScreenBox(fb: Framebuffer): Box =
+func screenBox(fb: Framebuffer): Box =
     result.pos.x = 0.0
     result.dims.x = fb.width.float
     result.pos.y = 0.0
     result.dims.y = fb.height.float
 
-proc getAboveScreenBox(fb: Framebuffer, doubleHeight = false): Box =
-    result = fb.getScreenBox
-    result.pos.y = -fb.height.float * (if doubleHeight: 2 else: 1)
+func aboveScreenBox(fb: Framebuffer, doubleHeight = false): Box =
+    result = fb.screenBox
+    result.pos.y = -fb.height.float
     if doubleHeight:
+        result.pos.y *= 2.0
         result.dims.y *= 2.0
 
 proc respawner(ecm: var EntityComponentManager, fb: Framebuffer) =
     var removeQueue: seq[Entity]
     for entity in ecm.iter(Position):
         doAssert ecm.has(entity)
-        if ecm.get(entity, Position).y.int > fb.height:
+        if ecm[entity, Position].y.int > fb.height:
             doAssert ecm.has(entity)
             removeQueue.add entity
     
-    let spawnBox = fb.getAboveScreenBox()
+    let spawnBox = fb.aboveScreenBox()
     while removeQueue.len > 0:
         let entity = removeQueue.pop()
         doAssert ecm.has(entity)
@@ -258,20 +260,11 @@ proc respawner(ecm: var EntityComponentManager, fb: Framebuffer) =
             ecm.addStar(spawnBox)
         ecm.remove(entity)
 
-proc limitPlayer(ecm: var EntityComponentManager, fb: Framebuffer) =
-    let fbHeight = fb.height
-    let fbWidth = fb.width
+func limitPlayer(ecm: var EntityComponentManager, box: Box) =
+    let box = box
     forEach(ecm, player: Player, p: var Position, img: Image):
-        p.x = clamp(
-            p.x,
-            0.0,
-            (fbWidth - img.width).float
-        )
-        p.y = clamp(
-            p.y,
-            0.0,
-            (fbHeight - img.height).float
-        )
+        p.x = clamp(p.x, box.pos.x, box.pos.x + box.dims.x - img.width.float)
+        p.y = clamp(p.y, box.pos.y, box.pos.y + box.dims.y - img.height.float)
 
 proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshipImg: Image, whoShot: Entity) =
     let entity = ecm.addEntity()
@@ -289,37 +282,104 @@ proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshi
         duration: initDuration(seconds = 10)
     ))
 
-func centerPosition(fb: Framebuffer, img: Image): (int, int) =
-    result[0] = fb.width div 2 - img.width div 2
-    result[1] = fb.height div 2 - img.height div 2
+func centerPosition(fb: Framebuffer, img: Image): Position =
+    Position(
+        x: (fb.width div 2 - img.width div 2).float,
+        y: (fb.height div 2 - img.height div 2).float
+    )
 
-proc addPlayer(ecm: var EntityComponentManager, fb: Framebuffer): Entity =
+proc addPlayer(ecm: var EntityComponentManager, pos: Position): Entity =
     result = ecm.addEntity()
     ecm.add(result, Player(score: 0))
-    ecm.add(result, RenderPriority(2))
+    ecm.add(result, RenderPriority(3))
     ecm.add(result, spaceshipImg)
-    let (x, y) = fb.centerPosition(spaceshipImg)
-    ecm.add(result, Position(x: x.float, y: y.float))
+    ecm.add(result, pos)
     ecm.add(result, Velocity(x: 0.0, y: 0.0))
     ecm.add(result, BulletMagazine(
         last: now(),
-        magazine: 5,
-        refillTime: initDuration(seconds = 1),
-        capacity: 5
+        content: bulletMagazineStartContent,
+        refillTime: bulletMagazineRefillTime,
+        capacity: bulletMagazineCapacity
     ))
 
 proc refillBulletMagazin(ecm: var EntityComponentManager) =
     forEach(ecm, bulletMagazine: var BulletMagazine):
         if now() - bulletMagazine.last > bulletMagazine.refillTime:
-            bulletMagazine.magazine = min(bulletMagazine.capacity, bulletMagazine.magazine + 1)
+            bulletMagazine.content = min(bulletMagazine.capacity, bulletMagazine.content + 1)
             bulletMagazine.last = now()
 
-proc getInfoImage(score, bulletMagazin, bulletMagazineCapacity: int, ): Image =
-    doAssert bulletMagazin <= bulletMagazineCapacity
+proc removeTimers(ecm: var EntityComponentManager) =
+    var removeQueue: seq[Entity]
+    for entity in ecm.iter(Timer):
+        if now() - ecm[entity, Timer].activation > ecm[entity, Timer].duration:
+            removeQueue.add entity
+    while removeQueue.len > 0:
+        ecm.remove(removeQueue.pop())
+
+func collidingWithAsteroid(ecm: EntityComponentManager, entity: Entity): Option[Entity] =
+    if ecm.has(entity, (Image, Position)):
+        for asteroidEntity in ecm.iter(Asteroid, Image, Position):
+            if colliding(
+                posA = ecm[entity, Position],
+                imgA = ecm[entity, Image],
+                posB = ecm[asteroidEntity, Position],
+                imgB = ecm[asteroidEntity, Image]
+            ):
+                return some(asteroidEntity)
+    none(Entity)
+
+proc makeToDust(
+    ecm: var EntityComponentManager,
+    entity: Entity,
+    chancePerSec = 0.8,
+    timeout = initDuration(seconds = 2)
+) =
+    doAssert ecm.has(entity, Image)
+    for line in ecm[entity, Image].data.mitems:
+        for rune in line.mitems:
+            if rune != transparentRune:
+                rune = dustRune
+    ecm.add(entity, Timer(
+        activation: now(),
+        duration: timeout
+    ))
+    ecm.add(entity, Dust(chancePerSec: chancePerSec))
+    if ecm.has(entity, RenderPriority):
+        ecm[entity] = RenderPriority(0)
+
+proc bulletHits(ecm: var EntityComponentManager, respawnBox: Box) =
+    var removeQueue: seq[Entity]
+    for entity in ecm.iter(Bullet, Image, Position):
+        let collidingAsteroid = ecm.collidingWithAsteroid(entity)
+        if collidingAsteroid.isSome:
+            let whoShot = ecm[entity, Bullet].whoShot
+            removeQueue.add entity
+            removeQueue.add collidingAsteroid.get()
+            if ecm.has(whoShot, Player):
+                ecm[whoShot, Player].score += 1
+    while removeQueue.len > 0:
+        let entity = removeQueue.pop()
+        if ecm.has(entity, Asteroid):
+            ecm.addAsteroid(respawnBox)
+            ecm.remove(entity, Asteroid)
+            ecm.makeToDust(entity)
+        else:
+            ecm.remove(entity)
+
+proc processDust(ecm: var EntityComponentManager, delta: Duration) =
+    let deltaS = delta.inMicroseconds.float / 1_000_000.0
+    forEach(ecm, dust: Dust, img: var Image):
+        for line in img.data.mitems:
+            for rune in line.mitems:
+                if rune == dustRune and dust.chancePerSec * deltaS > rand(1.0):
+                    rune = transparentRune
+
+proc getInfoImage(score: int, bulletMagazine: BulletMagazine): Image =
+    doAssert bulletMagazine.content <= bulletMagazine.capacity
     var infoString = "Score: " & fmt"{score:>5}" & "┃"
-    for i in 0..<bulletMagazin:
+    for i in 0..<bulletMagazine.content:
         infoString &= "▲"
-    for i in bulletMagazin..<bulletMagazineCapacity:
+    for i in bulletMagazine.content..<bulletMagazine.capacity:
         infoString &= "△"
     infoString &= "┃"
     let line1 = infoString.toRunes
@@ -333,73 +393,6 @@ proc getInfoImage(score, bulletMagazin, bulletMagazineCapacity: int, ): Image =
         else:
             rune = "━".toRune
     Image(data: @[line1, line2])
-
-proc removeTimers(ecm: var EntityComponentManager) =
-    var removeQueue: seq[Entity]
-    for entity in ecm.iter(Timer):
-        if now() - ecm.get(entity, Timer).activation > ecm.get(entity, Timer).duration:
-            removeQueue.add entity
-    while removeQueue.len > 0:
-        ecm.remove(removeQueue.pop())
-
-proc collidingWithAsteroids(ecm: EntityComponentManager, entity: Entity): Option[Entity] =
-    if ecm.has(entity, (Image, Position)):
-        for asteroidEntity in ecm.iter(Asteroid, Image, Position):
-            if areColliding(
-                posA = ecm.get(entity, Position),
-                imgA = ecm.get(entity, Image),
-                posB = ecm.get(asteroidEntity, Position),
-                imgB = ecm.get(asteroidEntity, Image)
-            ):
-                return some(asteroidEntity)
-    none(Entity)
-
-proc makeToDust(
-    ecm: var EntityComponentManager,
-    entity: Entity,
-    chancePerSec = 0.8,
-    timeout = initDuration(seconds = 2)
-) =
-    doAssert ecm.has(entity, Image)
-    for line in ecm.get(entity, Image).data.mitems:
-        for rune in line.mitems:
-            if rune != transparentRune:
-                rune = dustRune
-    ecm.add(entity, Timer(
-        activation: now(),
-        duration: timeout
-    ))
-    ecm.add(entity, Dust(chancePerSec: chancePerSec))
-    if ecm.has(entity, RenderPriority):
-        ecm.get(entity, RenderPriority) = RenderPriority(-1)
-
-proc bulletHits(ecm: var EntityComponentManager, fb: Framebuffer) =
-    var removeQueue: seq[Entity]
-    for entity in ecm.iter(Bullet, Image, Position):
-        let collidingAsteroid = ecm.collidingWithAsteroids(entity)
-        if collidingAsteroid.isSome:
-            let whoShot = ecm.get(entity, Bullet).whoShot
-            removeQueue.add entity
-            removeQueue.add collidingAsteroid.get()
-            if ecm.has(whoShot, Player):
-                ecm.get(whoShot, Player).score += 1
-    while removeQueue.len > 0:
-        let entity = removeQueue.pop()
-        if ecm.has(entity, Asteroid):
-            ecm.addAsteroid(fb.getAboveScreenBox())
-
-            ecm.remove(entity, Asteroid)
-            ecm.makeToDust(entity)
-        else:
-            ecm.remove(entity)
-
-proc processDust(ecm: var EntityComponentManager, delta: Duration) =
-    let deltaS = delta.inMicroseconds.float / 1_000_000.0
-    forEach(ecm, dust: Dust, img: var Image):
-        for line in img.data.mitems:
-            for rune in line.mitems:
-                if rune == dustRune and dust.chancePerSec * deltaS > rand(1.0):
-                    rune = transparentRune
 
 func getEndImage(score: int): Image =
     result = Image(data: @[
@@ -420,39 +413,33 @@ proc game() =
         ecm: EntityComponentManager
         fb = newFramebuffer(transparentRune)
         inputCatcher: InputCatcher
+        last = now()
+        lastNewAsteroid = now()
+        endImage: Image
 
-    let quitChars = ['q', 27.char]
-    inputCatcher.start(quitChars)
+    let
+        quitChars = ['q', 27.char]
+        numAsteroid = (fb.width * fb.height) div 250
+        numStars = (fb.width * fb.height) div 50
+        playerEntity = ecm.addPlayer(fb.centerPosition(spaceshipImg))
+        newAsteroidDuration = initDuration(seconds = 60000 div (fb.width * fb.height))
 
-    let numAsteroid = (fb.width * fb.height) div 250
-    let numStars = (fb.width * fb.height) div 50
 
     for i in 1..numAsteroid:
-        ecm.addAsteroid(fb.getAboveScreenBox(doubleHeight = true))
+        ecm.addAsteroid(fb.aboveScreenBox(doubleHeight = true))
     for i in 1..(numStars div 2):
-        ecm.addStar(fb.getScreenBox())
-        ecm.addStar(fb.getAboveScreenBox())
+        ecm.addStar(fb.screenBox)
+        ecm.addStar(fb.aboveScreenBox)
 
-    let playerEntity = ecm.addPlayer(fb)
-
-    var last = now()
-    var lastNewAsteroid = now()
-    let newAsteroidDuration = initDuration(seconds = 60000 div (fb.width * fb.height))
-    var endImage: Image
+    inputCatcher.start(quitChars)    
     while true:
 
-        ecm.drawStep(fb)
+        ecm.draw(fb)
         if ecm.has(playerEntity, Player):
-            fb.add(getInfoImage(
-                ecm.get(playerEntity, Player).score,
-                ecm.get(playerEntity, BulletMagazine).magazine,
-                ecm.get(playerEntity, BulletMagazine).capacity
-            ).data, x = 0, y = 0)
+            fb.add(getInfoImage(ecm[playerEntity, Player].score,ecm[playerEntity, BulletMagazine]).data, 0, 0)
         else:
-            let (x, y) = fb.centerPosition(endImage)
-            fb.add(endImage.data, x = x, y = y)
-
-
+            let pos = fb.centerPosition(endImage)
+            fb.add(endImage.data, x = pos.x.int, y = pos.y.int)
         fb.print()
 
 
@@ -463,50 +450,44 @@ proc game() =
         last = now()
         
         
-        ecm.physicsStep(delta)
-        ecm.limitPlayer(fb)
+        ecm.physics(delta)
+        ecm.limitPlayer(fb.screenBox)
         ecm.respawner(fb)
         ecm.refillBulletMagazin()
-        ecm.bulletHits(fb)
+        ecm.bulletHits(fb.aboveScreenBox)
         ecm.processDust(delta)
         ecm.removeTimers()
 
         if ecm.has(playerEntity, Player):
             if now() - lastNewAsteroid > newAsteroidDuration:
                 lastNewAsteroid = now()
-                ecm.addAsteroid(fb.getAboveScreenBox())
-            if ecm.collidingWithAsteroids(playerEntity).isSome():
-                endImage = getEndImage(ecm.get(playerEntity, Player).score)
+                ecm.addAsteroid(fb.aboveScreenBox())
+            if ecm.collidingWithAsteroid(playerEntity).isSome():
+                endImage = getEndImage(ecm[playerEntity, Player].score)
                 ecm.remove(playerEntity, Player)
-                ecm.get(playerEntity, Velocity) = Velocity(
-                    x: 0.0,
-                    y: 2.0
-                )
+                ecm[playerEntity, Velocity].x *= 0.1
+                ecm[playerEntity, Velocity].y = 2.0
                 ecm.makeToDust(playerEntity, 0.5, initDuration(seconds = 10))
         
-
-
-        
-
         for input in inputCatcher.get():
             if input in quitChars:
                 return
             if ecm.has(playerEntity, Player):
                 case input:
                 of 'a', 'd':
-                    ecm.get(playerEntity, Velocity) = Velocity(
-                        x: spaceshipMaxVelocityX * (if input == 'a': -1 else: 1),
+                    ecm[playerEntity] = Velocity(
+                        x: spaceshipMaxVelocity.x * (if input == 'a': -1 else: 1),
                         y: 0.0
                     )
                 of 's', 'w':
-                    ecm.get(playerEntity, Velocity) = Velocity(
+                    ecm[playerEntity] = Velocity(
                         x: 0.0,
-                        y: spaceshipMaxVelocityY * (if input == 'w': -1 else: 1)
+                        y: spaceshipMaxVelocity.y * (if input == 'w': -1 else: 1)
                     )
                 of ' ':
-                    if ecm.get(playerEntity, BulletMagazine).magazine > 0:
-                        ecm.addBullet(ecm.get(playerEntity, Position), ecm.get(playerEntity, Image), playerEntity)
-                        ecm.get(playerEntity, BulletMagazine).magazine -= 1
+                    if ecm[playerEntity, BulletMagazine].content > 0:
+                        ecm.addBullet(ecm[playerEntity, Position], ecm[playerEntity, Image], playerEntity)
+                        ecm[playerEntity, BulletMagazine].content -= 1
                 else:
                     discard
         
