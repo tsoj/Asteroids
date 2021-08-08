@@ -31,6 +31,9 @@ type
     RenderPriority = 0..2
     Exhaust = object
         offsets: seq[(int, int)]
+    Timer = object
+        activation: DateTime
+        duration: Duration
 
 const transparentRune = "`".toRune
 
@@ -259,7 +262,7 @@ proc limitPlayer(ecm: var EntityComponentManager, fb: Framebuffer) =
             0.0,
             (fbHeight - img.height).float
         )
-# TODO: fix ever living bullets
+
 proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshipImg: Image) =
     let entity = ecm.addEntity()
     ecm.add(entity, Bullet(0))
@@ -270,6 +273,10 @@ proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshi
     ecm.add(entity, Position(
         x: spaceshipPos.x + spaceshipImg.width.float / 2.0,
         y: spaceshipPos.y
+    ))
+    ecm.add(entity, Timer(
+        activation: now(),
+        duration: initDuration(seconds = 10)
     ))
 
 proc addPlayer(ecm: var EntityComponentManager, fb: Framebuffer): Entity =
@@ -312,6 +319,14 @@ proc getInfoImage(score, bulletMagazin, bulletMagazineCapacity: int, ): Image =
             rune = "━".toRune
     Image(data: @[line1, line2])
 
+proc removeTimers(ecm: var EntityComponentManager) =
+    var removeQueue: seq[Entity]
+    for entity in ecm.iter(Timer):
+        if now() - ecm.get(entity, Timer).activation > ecm.get(entity, Timer).duration:
+            removeQueue.add entity
+    while removeQueue.len > 0:
+        ecm.remove(removeQueue.pop())
+
 
 proc game() =
     var
@@ -331,7 +346,6 @@ proc game() =
         ecm.addStar(fb.getScreenBox())
         ecm.addStar(fb.getAboveScreenBox())
 
-    # TODO put this in a function
     let playerEntity = ecm.addPlayer(fb)
     var last = now()
     while true:
@@ -354,6 +368,7 @@ proc game() =
         ecm.limitPlayer(fb)
         ecm.respawner(fb)
         ecm.refillBulletMagazin()
+        ecm.removeTimers()
 
         
 
