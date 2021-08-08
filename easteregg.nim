@@ -2,6 +2,7 @@ import
     framebuffer,
     inputCatcher,
     ecSystem,
+    asteroidTemplates,
     unicode,
     random,
     os,
@@ -14,7 +15,7 @@ type
         data: seq[seq[Rune]]
     Vec2 = object
         x, y: float
-    Position = object#TODO: try distinct Vec2
+    Position = object
         x, y: float
     Velocity = object
         x, y: float
@@ -45,56 +46,20 @@ const transparentRune = "`".toRune
 
 const dustRune = "·".toRune
 
-const asteroidMiddleTemplates = [
-    [
-        "OOOOOOO".toRunes,
-        "OOOOOOO".toRunes
-    ],
-    [
-        "OOOOOOO".toRunes,
-        "OOOOOO`".toRunes
-    ],
-    [
-        "OOOOOOO".toRunes,
-        "`OOOOOO".toRunes
-    ],
-    [
-        "OOOOOOO".toRunes,
-        "`OOOOO`".toRunes
-    ],
-    [
-        "OOOOOO`".toRunes,
-        "`OOOOOO".toRunes
-    ],
-    [
-        "`OOOOOO".toRunes,
-        "OOOOOO`".toRunes
-    ],
-    [
-        "OOOOOO`".toRunes,
-        "OOOOOOO".toRunes
-    ],
-    [
-        "`OOOOOO".toRunes,
-        "OOOOOOO".toRunes
-    ],
-    [
-        "`OOOOO`".toRunes,
-        "OOOOOOO".toRunes
-    ]
-]
-const asteroidTopTemplates = [
-    "`OOOOO`".toRunes,
-    "``OOOO`".toRunes,
-    "`OOOO``".toRunes,
-    "```OOO`".toRunes,
-    "``OOO``".toRunes,
-    "`OOO```".toRunes
-]
 proc asteroidImage(): Image =
-    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
-    result.data.add asteroidMiddleTemplates[rand(asteroidMiddleTemplates.high)]
-    result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
+    if rand(1.0) < 0.8:
+        result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
+        result.data.add asteroidMiddleTemplates[rand(asteroidMiddleTemplates.high)]
+        result.data.add asteroidTopTemplates[rand(asteroidTopTemplates.high)]
+    else:
+        result.data.add asteroidBigTopTemplates[rand(asteroidBigTopTemplates.high)]
+        if rand(1.0) < 0.5:
+            result.data.add asteroidBigMiddleTemplates[rand(asteroidBigMiddleTemplates.high)][0]
+        elif rand(1.0) < 0.2:
+            result.data.add asteroidBigMiddleTemplates[rand(asteroidBigMiddleTemplates.high)]
+        result.data.add asteroidBigMiddleTemplates[rand(asteroidBigMiddleTemplates.high)]
+        result.data.add asteroidBigTopTemplates[rand(asteroidBigTopTemplates.high)]
+
     for line in result.data.mitems:
         for rune in line.mitems:
             if rune == "O".toRune:
@@ -102,7 +67,6 @@ proc asteroidImage(): Image =
                     rune = "o".toRune
                 elif rand(1.0) < 0.2:
                     rune = "0".toRune
-
 
 const spaceshipImg = Image(data: @[
     "``Λ``".toRunes,
@@ -136,8 +100,8 @@ const starVelocity = Velocity(x: 0.0, y: spaceshipMaxVelocity.y)
 proc asteroidVelocity(): Velocity = Velocity(x: rand(-7.0..7.0), y: rand(10.0..15.0))
 const bulletVelocity = Velocity(x: 0.0, y: -20.0)
 
-const bulletMagazineCapacity = 5
-const bulletMagazineStartContent = min(5, bulletMagazineCapacity)
+const bulletMagazineStartCapacity = 6
+const bulletMagazineStartContent = min(6, bulletMagazineStartCapacity)
 const bulletMagazineRefillTime = initDuration(seconds = 1)
 
 func isOk(img: Image): bool =
@@ -167,8 +131,7 @@ func colliding(posA, posB: Position, imgA, imgB: Image): bool =
         right = min(xA + imgA.width - 1, xB + imgB.width - 1)
         top = max(yA, yB)
         bottom = min(yA + imgA.height - 1, yB + imgB.height - 1)
-    
-    # TODO: maybe remove this, at least making xy naming more consistent
+
     template getRune(img: Image, xImg, yImg, xAt, yAt): Rune =
         let
             x = xAt - xImg
@@ -219,7 +182,7 @@ proc addAsteroid(ecm: var EntityComponentManager, box: Box) =
     box.dims.x -= ecm[entity, Image].width.float
     box.dims.y -= ecm[entity, Image].height.float
     ecm.add(entity, randomPositionInBox(box))
-    ecm.add(entity, Velocity(x: rand(-7.0..7.0), y: rand(10.0..15.0)))
+    ecm.add(entity, asteroidVelocity())
 
 proc addStar(ecm: var EntityComponentManager, box: Box) =
     let entity = ecm.addEntity()
@@ -272,7 +235,7 @@ proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshi
     ecm.add(entity, RenderPriority(1))
     ecm.add(entity, bulletImg)
     ecm.add(entity, bulletExhaust)
-    ecm.add(entity, Velocity(x: 0.0, y: -20.0))
+    ecm.add(entity, bulletVelocity)
     ecm.add(entity, Position(
         x: spaceshipPos.x + spaceshipImg.width.float / 2.0,
         y: spaceshipPos.y
@@ -299,7 +262,7 @@ proc addPlayer(ecm: var EntityComponentManager, pos: Position): Entity =
         last: now(),
         content: bulletMagazineStartContent,
         refillTime: bulletMagazineRefillTime,
-        capacity: bulletMagazineCapacity
+        capacity: bulletMagazineStartCapacity
     ))
 
 proc refillBulletMagazin(ecm: var EntityComponentManager) =
@@ -332,7 +295,7 @@ proc makeToDust(
     ecm: var EntityComponentManager,
     entity: Entity,
     chancePerSec = 0.8,
-    timeout = initDuration(seconds = 2)
+    timeout = initDuration(seconds = 10)
 ) =
     doAssert ecm.has(entity, Image)
     for line in ecm[entity, Image].data.mitems:
@@ -419,10 +382,10 @@ proc game() =
 
     let
         quitChars = ['q', 27.char]
-        numAsteroid = (fb.width * fb.height) div 250
+        numAsteroid = (fb.width * fb.height) div 300
         numStars = (fb.width * fb.height) div 50
         playerEntity = ecm.addPlayer(fb.centerPosition(spaceshipImg))
-        newAsteroidDuration = initDuration(seconds = 60000 div (fb.width * fb.height))
+        newAsteroidDuration = initDuration(milliseconds = 50_000_000 div (fb.width * fb.height))
 
 
     for i in 1..numAsteroid:
@@ -442,13 +405,11 @@ proc game() =
             fb.add(endImage.data, x = pos.x.int, y = pos.y.int)
         fb.print()
 
-
         # Don't waste CPU cycles if we don't notice a difference anyway
         while now() - last < initDuration(milliseconds = 10):
             sleep(1)
         let delta = now() - last
-        last = now()
-        
+        last = now()        
         
         ecm.physics(delta)
         ecm.limitPlayer(fb.screenBox)
@@ -467,11 +428,12 @@ proc game() =
                 ecm.remove(playerEntity, Player)
                 ecm[playerEntity, Velocity].x *= 0.1
                 ecm[playerEntity, Velocity].y = 2.0
-                ecm.makeToDust(playerEntity, 0.5, initDuration(seconds = 10))
+                ecm.makeToDust(playerEntity, chancePerSec = 0.5)
         
         for input in inputCatcher.get():
             if input in quitChars:
                 return
+
             if ecm.has(playerEntity, Player):
                 case input:
                 of 'a', 'd':
@@ -490,8 +452,10 @@ proc game() =
                         ecm[playerEntity, BulletMagazine].content -= 1
                 else:
                     discard
-        
+    echo ""
 
-
-randomize()
-game()
+proc run*() =
+    randomize()
+    game()
+when isMainModule:
+    run()

@@ -6,11 +6,10 @@ func toRune*(s: string): Rune =
     doAssert s.runeLen == 1
     s.runeAt(0)
 
-type
-    Framebuffer* = object
-        buffer: seq[seq[Rune]]
-        width, height: int
-        transparentRune: Rune
+type Framebuffer* = object
+    buffer: seq[seq[Rune]]
+    width, height: int
+    transparentRune: Rune
 
 func width*(framebuffer: Framebuffer): int = framebuffer.width
 func height*(framebuffer: Framebuffer): int = framebuffer.height

@@ -39,8 +39,6 @@ func bitTypeIdUnion(Ts: tuple): uint64 =
         assert (bitId and entityBit) == 0
         bitId
 
-#----------------------------------------------#
-
 type ComponentVectors = object
     vec: seq[ref seq[int8]]
     destroyFunctions: Table[int, proc(vec: ref seq[int8])]
@@ -76,11 +74,10 @@ func get(componentVectors: ComponentVectors, T: typedesc): lent seq[T] =
     doAssert componentVectors.vec.len > id and componentVectors.vec[id] != nil
     cast[ref seq[T]](componentVectors.vec[id])[]
 
-#----------------------------------------------#
-# TODO: describe all the eigenartiges behaviour of this:
-# - rare and big objects should be passed as refs to the entity component manager, otherwiese alot of space will be wasted
-# - Components of type tuple may not work. Better use proper objects
-# TODO: add logging
+# Rare and big objects should be passed as refs to the entity component manager,
+# otherwiese alot of space will be wasted.
+# Components of type tuple may not work. Better use proper objects.
+
 type Entity* = int
 type EntityComponentManager* = object
     componentVectors: ComponentVectors
@@ -166,7 +163,6 @@ func remove*(ecm: var EntityComponentManager, entity: Entity, T: typedesc) =
         )
     
     ecm.hasMask[entity] = ecm.hasMask[entity] and not bitTypeId(T)
-
     ecm.componentTypeToEntity[typeId(T)].remove(entity)
 
 template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, entity: Entity, T: typedesc): auto =
@@ -180,9 +176,9 @@ template getTemplate(ecm: EntityComponentManager or var EntityComponentManager, 
             KeyError,
             "Component cannot be accessed: Entity " & $entity & " does not have component " & $T & "."
         )
-    template componentVector: auto = ecm.componentVectors.get(T)
-    assert componentVector.len > entity
-    componentVector[entity]
+    
+    assert ecm.componentVectors.get(T).len > entity
+    ecm.componentVectors.get(T)[entity]
 
 func get*[T](ecm: var EntityComponentManager, entity: Entity, desc: typedesc[T]): var T =
     ecm.getTemplate(entity, T)
@@ -193,8 +189,6 @@ template `[]`*(ecm: EntityComponentManager or var EntityComponentManager, entity
     ecm.get(entity, T)
 template `[]=`*[T](ecm: var EntityComponentManager, entity: Entity, t: T) =
     ecm.get(entity, typedesc[T]) = t
-    
-    
 
 func getRarestComponent(ecm: EntityComponentManager, ComponentTypes: tuple): TypeId =
     var min = int.high
@@ -218,7 +212,7 @@ iterator iterAll*(ecm: EntityComponentManager): Entity =
         if ecm.has(entity):
             yield entity
 
-# usage example:
+# Example:
 # forEach(ecm, a: ComponentA, b: var ComponentB, c: ComponentC):
 #     echo a
 #     b.x = c.y
