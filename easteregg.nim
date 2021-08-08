@@ -289,12 +289,17 @@ proc addBullet(ecm: var EntityComponentManager, spaceshipPos: Position, spaceshi
         duration: initDuration(seconds = 10)
     ))
 
+func centerPosition(fb: Framebuffer, img: Image): (int, int) =
+    result[0] = fb.width div 2 - img.width div 2
+    result[1] = fb.height div 2 - img.height div 2
+
 proc addPlayer(ecm: var EntityComponentManager, fb: Framebuffer): Entity =
     result = ecm.addEntity()
     ecm.add(result, Player(score: 0))
     ecm.add(result, RenderPriority(2))
     ecm.add(result, spaceshipImg)
-    ecm.add(result, Position(x: (fb.width div 2).float, y: (fb.height div 2).float))
+    let (x, y) = fb.centerPosition(spaceshipImg)
+    ecm.add(result, Position(x: x.float, y: y.float))
     ecm.add(result, Velocity(x: 0.0, y: 0.0))
     ecm.add(result, BulletMagazine(
         last: now(),
@@ -311,7 +316,7 @@ proc refillBulletMagazin(ecm: var EntityComponentManager) =
 
 proc getInfoImage(score, bulletMagazin, bulletMagazineCapacity: int, ): Image =
     doAssert bulletMagazin <= bulletMagazineCapacity
-    var infoString = "Score: " & fmt"{score:>4}" & "┃"
+    var infoString = "Score: " & fmt"{score:>5}" & "┃"
     for i in 0..<bulletMagazin:
         infoString &= "▲"
     for i in bulletMagazin..<bulletMagazineCapacity:
@@ -349,33 +354,42 @@ proc collidingWithAsteroids(ecm: EntityComponentManager, entity: Entity): Option
                 return some(asteroidEntity)
     none(Entity)
 
+proc makeToDust(
+    ecm: var EntityComponentManager,
+    entity: Entity,
+    chancePerSec = 0.8,
+    timeout = initDuration(seconds = 2)
+) =
+    doAssert ecm.has(entity, Image)
+    for line in ecm.get(entity, Image).data.mitems:
+        for rune in line.mitems:
+            if rune != transparentRune:
+                rune = dustRune
+    ecm.add(entity, Timer(
+        activation: now(),
+        duration: timeout
+    ))
+    ecm.add(entity, Dust(chancePerSec: chancePerSec))
+    if ecm.has(entity, RenderPriority):
+        ecm.get(entity, RenderPriority) = RenderPriority(-1)
+
 proc bulletHits(ecm: var EntityComponentManager, fb: Framebuffer) =
     var removeQueue: seq[Entity]
     for entity in ecm.iter(Bullet, Image, Position):
         let collidingAsteroid = ecm.collidingWithAsteroids(entity)
         if collidingAsteroid.isSome:
             let whoShot = ecm.get(entity, Bullet).whoShot
-            doAssert ecm.has(whoShot, Player)
-            ecm.get(whoShot, Player).score += 1
             removeQueue.add entity
             removeQueue.add collidingAsteroid.get()
+            if ecm.has(whoShot, Player):
+                ecm.get(whoShot, Player).score += 1
     while removeQueue.len > 0:
         let entity = removeQueue.pop()
         if ecm.has(entity, Asteroid):
             ecm.addAsteroid(fb.getAboveScreenBox())
 
             ecm.remove(entity, Asteroid)
-            for line in ecm.get(entity, Image).data.mitems:
-                for rune in line.mitems:
-                    if rune != transparentRune:
-                        rune = dustRune
-            ecm.add(entity, Timer(
-                activation: now(),
-                duration: initDuration(seconds = 2)
-            ))
-            ecm.add(entity, Dust(chancePerSec: 0.9))
-            if ecm.has(entity, RenderPriority):
-                ecm.get(entity, RenderPriority) = RenderPriority(-1)
+            ecm.makeToDust(entity)
         else:
             ecm.remove(entity)
 
@@ -386,6 +400,20 @@ proc processDust(ecm: var EntityComponentManager, delta: Duration) =
             for rune in line.mitems:
                 if rune == dustRune and dust.chancePerSec * deltaS > rand(1.0):
                     rune = transparentRune
+
+func getEndImage(score: int): Image =
+    result = Image(data: @[
+        "╔════════════════════╗".toRunes,
+        "║┌┬┐┬ ┬┌─┐  ┌─┐┬ ┬┌─╮║".toRunes,
+        "║ │ ├─┤├─   ├─ │╲││ │║".toRunes,
+        "║ ┴ ┴ ┴└─┘  └─┘┴ ┴└─╯║".toRunes,
+        "╚══════╦══════╦══════╝".toRunes,
+        ("```````║" & fmt"{score:^6}" & "║```````").toRunes,
+        "```````╚══════╝```````".toRunes,
+        "┌────────────────────┐".toRunes,
+        "│ press 'q' to quit  │".toRunes,
+        "└────────────────────┘".toRunes
+    ])
 
 proc game() =
     var
@@ -407,19 +435,24 @@ proc game() =
 
     let playerEntity = ecm.addPlayer(fb)
 
-    var gameRunning = true
-
     var last = now()
     var lastNewAsteroid = now()
     let newAsteroidDuration = initDuration(seconds = 60000 div (fb.width * fb.height))
+    var endImage: Image
     while true:
 
         ecm.drawStep(fb)
-        fb.add(getInfoImage(
-            ecm.get(playerEntity, Player).score,
-            ecm.get(playerEntity, BulletMagazine).magazine,
-            ecm.get(playerEntity, BulletMagazine).capacity
-        ).data, x = 0, y = 0)
+        if ecm.has(playerEntity, Player):
+            fb.add(getInfoImage(
+                ecm.get(playerEntity, Player).score,
+                ecm.get(playerEntity, BulletMagazine).magazine,
+                ecm.get(playerEntity, BulletMagazine).capacity
+            ).data, x = 0, y = 0)
+        else:
+            let (x, y) = fb.centerPosition(endImage)
+            fb.add(endImage.data, x = x, y = y)
+
+
         fb.print()
 
 
@@ -428,40 +461,54 @@ proc game() =
             sleep(1)
         let delta = now() - last
         last = now()
+        
+        
         ecm.physicsStep(delta)
         ecm.limitPlayer(fb)
         ecm.respawner(fb)
         ecm.refillBulletMagazin()
-        ecm.removeTimers()
         ecm.bulletHits(fb)
         ecm.processDust(delta)
+        ecm.removeTimers()
 
-        if now() - lastNewAsteroid > newAsteroidDuration:
-            lastNewAsteroid = now()
-            ecm.addAsteroid(fb.getAboveScreenBox())
+        if ecm.has(playerEntity, Player):
+            if now() - lastNewAsteroid > newAsteroidDuration:
+                lastNewAsteroid = now()
+                ecm.addAsteroid(fb.getAboveScreenBox())
+            if ecm.collidingWithAsteroids(playerEntity).isSome():
+                endImage = getEndImage(ecm.get(playerEntity, Player).score)
+                ecm.remove(playerEntity, Player)
+                ecm.get(playerEntity, Velocity) = Velocity(
+                    x: 0.0,
+                    y: 2.0
+                )
+                ecm.makeToDust(playerEntity, 0.5, initDuration(seconds = 10))
+        
+
 
         
 
         for input in inputCatcher.get():
             if input in quitChars:
                 return
-            case input:
-            of 'a', 'd':
-                ecm.get(playerEntity, Velocity) = Velocity(
-                    x: spaceshipMaxVelocityX * (if input == 'a': -1 else: 1),
-                    y: 0.0
-                )
-            of 's', 'w':
-                ecm.get(playerEntity, Velocity) = Velocity(
-                    x: 0.0,
-                    y: spaceshipMaxVelocityY * (if input == 'w': -1 else: 1)
-                )
-            of ' ':
-                if ecm.get(playerEntity, BulletMagazine).magazine > 0:
-                    ecm.addBullet(ecm.get(playerEntity, Position), ecm.get(playerEntity, Image), playerEntity)
-                    ecm.get(playerEntity, BulletMagazine).magazine -= 1
-            else:
-                discard
+            if ecm.has(playerEntity, Player):
+                case input:
+                of 'a', 'd':
+                    ecm.get(playerEntity, Velocity) = Velocity(
+                        x: spaceshipMaxVelocityX * (if input == 'a': -1 else: 1),
+                        y: 0.0
+                    )
+                of 's', 'w':
+                    ecm.get(playerEntity, Velocity) = Velocity(
+                        x: 0.0,
+                        y: spaceshipMaxVelocityY * (if input == 'w': -1 else: 1)
+                    )
+                of ' ':
+                    if ecm.get(playerEntity, BulletMagazine).magazine > 0:
+                        ecm.addBullet(ecm.get(playerEntity, Position), ecm.get(playerEntity, Image), playerEntity)
+                        ecm.get(playerEntity, BulletMagazine).magazine -= 1
+                else:
+                    discard
         
 
 

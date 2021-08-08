@@ -9,11 +9,15 @@ proc catchInput(inputQueue: ptr Deque[char], quitChars: seq[char]): bool =
         inputQueue[].addLast c
         if c in quitChars:
             break
-    echo "Exited input catch thread"
 
 type InputCatcher* = object
     inputQueue: Deque[char]
     thread: FlowVar[bool]
+
+proc `=destroy`(x: var InputCatcher) =
+    discard ^x.thread
+    `=destroy`(x.inputQueue)
+    `=destroy`(x.thread)
 
 proc start*(inputCatcher: var InputCatcher, quitChars: openArray[char]) =
     var qc: seq[char]
