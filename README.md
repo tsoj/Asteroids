@@ -39,3 +39,8 @@ It requires a Unicode compatible console to work best. Unfortunately it doesn't 
 
 ### Highscore
 My personal highscore is **188**.
+
+### Tips
+- use the [cool-retro-term](https://github.com/Swordfish90/cool-retro-term) terminal with burn-in effect disabled
+- maximize your terminal (F11 or Alt + F11 or similar)
+- don't be slow!
