@@ -21,7 +21,7 @@ A small console game written in Nim.
 ```
 nim default asteroids.nim
 ```
-Precompiled binaries for Linux can be found [here](https://gitlab.com/tsoj/asteroids/-/releases)
+Precompiled binaries for Linux can be found [here](https://gitlab.com/tsoj/asteroids/-/releases).
 
 ### Run
 ```
