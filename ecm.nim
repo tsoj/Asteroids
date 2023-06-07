@@ -13,7 +13,7 @@ type TypeId = int
 const maxNumComponentTypes = 63
 const entityBit = 0b1
 
-func typeId*(T:typedesc): TypeId =
+func typeId*(T: typedesc): TypeId =
     const id = nextTypeId.value
     static:
         doAssert id < maxNumComponentTypes, "Maximum number of different component types is " & $maxNumComponentTypes
@@ -23,12 +23,12 @@ func typeId*(T:typedesc): TypeId =
 func bitTypeId(id: TypeId): uint64 =
     (0b10'u64 shl id)
 
-func bitTypeId(T: typedesc): uint64 =
-    let bitID {.global.} = bitTypeId(typeId(T))
+func bitTypeId(T: static typedesc): uint64 =
+    const bitID = bitTypeId(typeId(T))
     {.cast(noSideEffect).}:
         bitID
 
-func bitTypeIdUnion(Ts: tuple): uint64 =
+func bitTypeIdUnion(Ts: static tuple): uint64 =
     {.cast(noSideEffect).}:
         var bitId {.global.}: uint64
         once:
